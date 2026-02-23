@@ -12,324 +12,489 @@ import {
   ArrowLeft,
   Users,
   Clock,
-    const sector = sectors.find((s) => s.id === selectedSectorId) ?? sectors[0]
-    return (
-      <>
-        <div className="min-h-screen bg-background no-print">
-          <header className="border-b border-border bg-card sticky top-0 z-10">
-            <div className="container mx-auto px-4 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Button variant="ghost" size="icon" onClick={() => router.push("/")}
-                    >
-                    <ArrowLeft className="w-5 h-5" />
-                  </Button>
-                  <div>
-                    <h1 className="text-xl font-bold">Punto de Venta</h1>
-                    <p className="text-sm text-muted-foreground">Seleccione un área y una mesa</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="gap-1">
-                    <Clock className="w-3 h-3" />
-                    Turno: {currentUser.name}
-                  </Badge>
-                  <Badge variant="outline" className="gap-1">
-                    <Users className="w-3 h-3" />
-                    {allSectorTables.filter((t) => t.status === "occupied").length}/{allSectorTables.length} Ocupadas
-                  </Badge>
+  Plus,
+  Minus,
+  Trash2,
+  Search,
+  ShoppingCart,
+  CreditCard,
+  DollarSign,
+  FileText,
+  BarChart3,
+  LogOut,
+  ClipboardList,
+} from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { toast } from "@/hooks/use-toast"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Textarea } from "@/components/ui/textarea"
 
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <CreditCard className="w-4 h-4 mr-2" />
-                        Caja
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuLabel>Gestión de Caja</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      {!cashOpen ? (
-                        <DropdownMenuItem
-                          onClick={() => {
-                            if (currentUser.role === "mesero") {
-                              toast({
-                                title: "Permiso denegado",
-                                description: "Solo cajero o supervisor pueden abrir caja.",
-                              })
-                              return
-                            }
-                            setShowCashOpen(true)
-                          }}
-                        >
-                          Abrir Caja
-                        </DropdownMenuItem>
-                      ) : (
-                        <>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              if (currentUser.role === "mesero") {
-                                toast({
-                                  title: "Permiso denegado",
-                                  description: "Solo cajero o supervisor pueden mover caja.",
-                                })
-                                return
-                              }
-                              setShowCashMove(true)
-                            }}
-                          >
-                            Movimiento de efectivo
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              if (currentUser.role === "mesero") {
-                                toast({
-                                  title: "Permiso denegado",
-                                  description: "Solo cajero o supervisor pueden cerrar caja.",
-                                })
-                                return
-                              }
-                              setShowCashClose(true)
-                            }}
-                          >
-                            Cerrar Caja
-                          </DropdownMenuItem>
-                        </>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+interface Table {
+  id: number
+  number: number
+  capacity: number
+  status: "available" | "occupied" | "reserved"
+  currentOrder?: Order
+}
 
-                  <Button size="sm" onClick={handleCloseShift}>
-                    <Clock className="w-4 h-4 mr-2" />
-                    Cerrar Turno
-                  </Button>
+interface OrderItem {
+  id: string
+  name: string
+  price: number
+  quantity: number
+  category: string
+  modifiers?: Array<{ group: string; option: string; priceDelta: number }>
+  notes?: string
+  status?: "en_cocina" | "listo" | "entregado"
+}
 
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <BarChart3 className="w-4 h-4 mr-2" />
-                        Opciones
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuLabel>Gestión de Turno</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => setShowReportsDialog(true)}>
-                        <BarChart3 className="w-4 h-4 mr-2" />
-                        Ver Reportes
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-muted-foreground" onClick={logoutPOS}>
-                        <LogOut className="w-4 h-4 mr-2" />
-                        Cerrar Sesión
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            </div>
-          </header>
+interface Order {
+  id: string
+  tableNumber: number
+  items: OrderItem[]
+  total: number
+  startTime: Date
+  status: "pendiente" | "en_cocina" | "servido" | "pagado"
+  diners?: number
+  serviceType?: "mesa" | "para_llevar" | "domicilio"
+}
 
-          <main className="container mx-auto px-4 py-6">
-            <Tabs value={selectedSectorId} onValueChange={setSelectedSectorId}>
-              <TabsList className="grid grid-cols-3 w-full mb-6">
-                {sectors.map((s) => (
-                  <TabsTrigger key={s.id} value={s.id} className="text-sm">
-                    {s.name}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+interface MenuItem {
+  id: string
+  name: string
+  price: number
+  category: string
+}
 
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {sector.tables.map((t) => {
-                const waiterName =
-                  waiters.find((w) => w.id === (tableWaiter[t.id] || ""))?.name || "—"
-                return (
-                  <Card
-                    key={t.id}
-                    className="cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => handleSelectAreaTable({ id: t.id, label: t.label, seats: t.seats })}
-                  >
-                    <CardContent className="p-4 space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="text-lg font-bold">{t.label}</div>
-                          <div className="text-xs text-muted-foreground">{t.seats} personas</div>
-                        </div>
-                        <Badge variant="outline" className={getTableStatusColor(t.status)}>
-                          {safelyGetStatusText(t.status)}
-                        </Badge>
-                      </div>
-                      <div className="text-xs text-muted-foreground">Mesero: {waiterName}</div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>
-          </main>
+interface Payment {
+  id: string
+  orderId: string
+  tableNumber: number
+  amount: number
+  tenders: Array<{
+    id: string
+    method: "cash" | "card" | "transfer"
+    amount: number
+    cardBatch?: string
+    transferRef?: string
+  }>
+  timestamp: Date
+  userId: string
+  userName: string
+  invoiced: boolean
+  items: OrderItem[]
+  waiterId?: string
+  waiterName?: string
+}
 
-          <Dialog open={showCashClose} onOpenChange={setShowCashClose}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Cerrar Caja</DialogTitle>
-                <DialogDescription>Arqueo de caja: compare efectivo físico vs sistema</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Efectivo en sistema:</span>
-                  <span className="font-medium">${currentCash.toFixed(2)}</span>
-                </div>
-                <Label>Efectivo físico</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={physicalCount}
-                  onChange={(e) => setPhysicalCount(Number(e.target.value))}
-                />
-                <div className="flex justify-between text-sm">
-                  <span>Diferencia:</span>
-                  <span className="font-medium">${(physicalCount - currentCash).toFixed(2)}</span>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowCashClose(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={closeCash}>Confirmar Cierre</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+interface Invoice {
+  id: string
+  paymentId: string
+  tableNumber: number
+  items: OrderItem[]
+  subtotal: number
+  tax: number
+  total: number
+  timestamp: Date
+  customerName?: string
+  customerRFC?: string
+}
 
-          <Dialog open={showCashMove} onOpenChange={setShowCashMove}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Movimiento de efectivo</DialogTitle>
-                <DialogDescription>Registre entradas o retiros durante el turno</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  <Button
-                    variant={cashMoveType === "entrada" ? "default" : "outline"}
-                    onClick={() => setCashMoveType("entrada")}
-                  >
-                    Entrada
-                  </Button>
-                  <Button
-                    variant={cashMoveType === "retiro" ? "default" : "outline"}
-                    onClick={() => setCashMoveType("retiro")}
-                  >
-                    Retiro
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  <Label>Monto</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={cashMoveAmount}
-                    onChange={(e) => setCashMoveAmount(Number(e.target.value))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Motivo / Justificación</Label>
-                  <Input
-                    value={cashMoveReason}
-                    onChange={(e) => setCashMoveReason(e.target.value)}
-                    placeholder="Ej: cambio, pago proveedor, etc."
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowCashMove(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={registerCashMove} disabled={cashMoveAmount <= 0 || !cashMoveReason.trim()}>
-                  Registrar
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+interface ShiftReport {
+  shiftId: string
+  userId: string
+  userName: string
+  startTime: Date
+  endTime?: Date
+  totalSales: number
+  totalOrders: number
+  paymentMethods: {
+    cash: number
+    card: number
+    transfer: number
+  }
+  productsUsed: { [key: string]: number }
+}
 
-          <Dialog open={showAssignWaiter} onOpenChange={setShowAssignWaiter}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Asignar Mesero</DialogTitle>
-                <DialogDescription>
-                  {pendingAreaTable ? `Mesa ${pendingAreaTable.label} · ${pendingAreaTable.seats} personas` : ""}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-2">
-                <Label>Mesero</Label>
-                <Select value={selectedWaiterId} onValueChange={setSelectedWaiterId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccione mesero" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {waiters.map((w) => (
-                      <SelectItem key={w.id} value={w.id}>
-                        {w.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowAssignWaiter(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={confirmAssignWaiter} disabled={!selectedWaiterId}>
-                  Confirmar
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+type Role = "cajero" | "mesero" | "supervisor"
 
-          <Dialog open={showSupervisorDialog} onOpenChange={setShowSupervisorDialog}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Autorización de Supervisor</DialogTitle>
-                <DialogDescription>{supervisorActionLabel}</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-2">
-                <Label>PIN de Supervisor</Label>
-                <Input
-                  type="password"
-                  value={supervisorPinInput}
-                  onChange={(e) => setSupervisorPinInput(e.target.value)}
-                />
-                {supervisorError && <div className="text-xs text-destructive">{supervisorError}</div>}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowSupervisorDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={() => {
-                    if (supervisorPinInput === supervisorPIN) {
-                      setShowSupervisorDialog(false)
-                      const cb = pendingSupervisorAction
-                      setPendingSupervisorAction(null)
-                      setSupervisorPinInput("")
-                      setSupervisorError("")
-                      logAudit("supervisor-override", supervisorActionLabel)
-                      cb && cb()
-                    } else {
-                      setSupervisorError("PIN incorrecto")
-                    }
-                  }}
-                >
-                  Autorizar
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
+interface AuditEntry {
+  id: string
+  timestamp: Date
+  userId: string
+  userName: string
+  role: Role
+  action: string
+  description?: string
+}
 
-        {PrintTicketView}
-      </>
+type TableAccount = {
+  id: string
+  label: string
+  orderId: string
+  startTime: number
+  diners: number
+  serviceType: "mesa" | "para_llevar" | "domicilio"
+  status: "pendiente" | "en_cocina" | "servido" | "pagado"
+  discountAmount: number
+  deducted: boolean
+  items: OrderItem[]
+}
+
+type SectorTableStatus = "available" | "occupied" | "reserved"
+type SectorTable = { id: number; label: string; seats: number; status: SectorTableStatus }
+type Sector = { id: string; name: string; tables: SectorTable[] }
+
+const initialSectors: Sector[] = [
+  {
+    id: "rest",
+    name: "Restaurante",
+    tables: [
+      { id: 101, label: "R1", seats: 4, status: "available" },
+      { id: 102, label: "R2", seats: 6, status: "occupied" },
+      { id: 103, label: "R3", seats: 4, status: "available" },
+      { id: 104, label: "R4", seats: 2, status: "reserved" },
+    ],
+  },
+  {
+    id: "bar",
+    name: "Bar",
+    tables: [
+      { id: 201, label: "B1", seats: 2, status: "available" },
+      { id: 202, label: "B2", seats: 2, status: "occupied" },
+      { id: 203, label: "B3", seats: 4, status: "available" },
+    ],
+  },
+  {
+    id: "perg",
+    name: "Pérgola",
+    tables: [
+      { id: 301, label: "P1", seats: 6, status: "available" },
+      { id: 302, label: "P2", seats: 8, status: "available" },
+    ],
+  },
+]
+
+export default function POSPage() {
+  const router = useRouter()
+
+  const [sessionReady, setSessionReady] = useState(false)
+  const [currentUser, setCurrentUser] = useState<{ id: string; name: string; role: Role }>({
+    id: "",
+    name: "",
+    role: "cajero",
+  })
+  const [currentShift, setCurrentShift] = useState<ShiftReport>({
+    shiftId: `SHIFT-${Date.now()}`,
+    userId: "",
+    userName: "",
+    startTime: new Date(),
+    totalSales: 0,
+    totalOrders: 0,
+    paymentMethods: { cash: 0, card: 0, transfer: 0 },
+    productsUsed: {},
+  })
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("module_session_pos")
+      if (!raw) {
+        setSessionReady(false)
+        router.replace("/pos/login")
+        return
+      }
+      const session = JSON.parse(raw) as { username?: string; role?: Role }
+      const username = session.username || "Usuario"
+      const role: Role = session.role || (username === "mesero" ? "mesero" : "cajero")
+      setCurrentUser({ id: `user-${username}`, name: username, role })
+      setCurrentShift({
+        shiftId: `SHIFT-${Date.now()}`,
+        userId: `user-${username}`,
+        userName: username,
+        startTime: new Date(),
+        totalSales: 0,
+        totalOrders: 0,
+        paymentMethods: { cash: 0, card: 0, transfer: 0 },
+        productsUsed: {},
+      })
+      setSessionReady(true)
+    } catch {
+      setSessionReady(false)
+      router.replace("/pos/login")
+    }
+  }, [router])
+
+  const logoutPOS = () => {
+    try {
+      localStorage.removeItem("module_session_pos")
+    } catch {
+      // ignore
+    }
+    router.push("/pos/login")
+  }
+
+  const [sectors, setSectors] = useState<Sector[]>(initialSectors)
+  const allSectorTables = useMemo(() => sectors.flatMap((s) => s.tables), [sectors])
+  const updateSectorTableStatus = (tableId: number, status: SectorTableStatus) => {
+    setSectors((prev) =>
+      prev.map((s) => ({
+        ...s,
+        tables: s.tables.map((t) => (t.id === tableId ? { ...t, status } : t)),
+      })),
     )
   }
+
+  // New: start in tables-by-area view
+  const [mode, setMode] = useState<"tables" | "app">("tables")
+  const [selectedTable, setSelectedTable] = useState<Table | null>(null)
+
+  const MAX_ACCOUNTS_PER_TABLE = 5
+  const [accountsByTable, setAccountsByTable] = useState<Record<number, TableAccount[]>>({})
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
+  const isHydratingAccountRef = useRef(false)
+
+  const createAccount = (tableId: number, seats: number, labelIndex: number): TableAccount => {
+    const now = Date.now()
+    return {
+      id: `ACC-${tableId}-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      label: `Cuenta ${labelIndex}`,
+      orderId: `TCK-${now}`,
+      startTime: now,
+      diners: seats,
+      serviceType: "mesa",
+      status: "pendiente",
+      discountAmount: 0,
+      deducted: false,
+      items: [],
+    }
+  }
+
+  // An "active" account is one that still has items to settle and isn't paid yet.
+  const getActiveAccounts = (tableId: number) => (accountsByTable[tableId] || []).filter((a) => a.items.length > 0 && a.status !== "pagado")
+
+  const closeAllDialogs = () => {
+    setShowPaymentDialog(false)
+    setShowInvoiceDialog(false)
+    setShowDiscountDialog(false)
+    setShowSplitDialog(false)
+    setShowTransferDialog(false)
+    setShowModifiersDialog(false)
+  }
+
+  const goToTables = () => {
+    closeAllDialogs()
+    setMode("tables")
+    setSelectedTable(null)
+    setSelectedAccountId(null)
+  }
+
+  const upsertSelectedAccountSnapshot = (partial?: Partial<TableAccount>) => {
+    if (!selectedTable || !selectedAccountId) return
+    const tableId = selectedTable.id
+    setAccountsByTable((prev) => {
+      const list = prev[tableId] || []
+      const idx = list.findIndex((a) => a.id === selectedAccountId)
+      if (idx === -1) return prev
+      const nextAcc: TableAccount = {
+        ...list[idx],
+        orderId: orderId || list[idx].orderId,
+        startTime: (orderStartTime ? orderStartTime.getTime() : list[idx].startTime) || list[idx].startTime,
+        diners,
+        serviceType,
+        status: orderStatus,
+        discountAmount,
+        deducted: orderDeducted,
+        items: currentOrder,
+        ...(partial || {}),
+      }
+      const next = [...list]
+      next[idx] = nextAcc
+      return { ...prev, [tableId]: next }
+    })
+  }
+  const [currentOrder, setCurrentOrder] = useState<OrderItem[]>([])
+  const [searchQuery, setSearchQuery] = useState("")
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false)
+  const [showInvoiceDialog, setShowInvoiceDialog] = useState(false)
+  const [showShiftDialog, setShowShiftDialog] = useState(false)
+  const [showReportsDialog, setShowReportsDialog] = useState(false)
+  const [currentPayment, setCurrentPayment] = useState<Payment | null>(null)
+
+  type PaymentTenderDraft = {
+    id: string
+    method: "cash" | "card" | "transfer"
+    amount: number
+    cardBatch?: string
+    transferRef?: string
+  }
+  const [paymentTendersDraft, setPaymentTendersDraft] = useState<PaymentTenderDraft[]>([])
+
+  const [printTicket, setPrintTicket] = useState<{
+    kind: "payment" | "precount"
+    ticketId: string
+    timestamp: Date
+    tableNumber?: number | string
+    waiterName: string
+    serviceType: string
+    diners: number
+    items: OrderItem[]
+    discountAmount: number
+    tenders: PaymentTenderDraft[]
+    paidBy?: string
+  } | null>(null)
+
+  const [payments, setPayments] = useState<Payment[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [activeView, setActiveView] = useState<"pos" | "billing">("pos")
+  const [orderDeducted, setOrderDeducted] = useState(false)
+  // Order meta
+  const [orderId, setOrderId] = useState<string | null>(null)
+  const [orderStartTime, setOrderStartTime] = useState<Date | null>(null)
+  const [diners, setDiners] = useState<number>(1)
+  const [serviceType, setServiceType] = useState<"mesa" | "para_llevar" | "domicilio">("mesa")
+  const [orderStatus, setOrderStatus] = useState<"pendiente" | "en_cocina" | "servido" | "pagado">("pendiente")
+  // Totals/discounts
+  const [discountAmount, setDiscountAmount] = useState<number>(0)
+  const [showDiscountDialog, setShowDiscountDialog] = useState(false)
+  // Split bill
+  const [showSplitDialog, setShowSplitDialog] = useState(false)
+  const [splitPeople, setSplitPeople] = useState(2)
+  const [splitMode, setSplitMode] = useState<"equal" | "byItem">("equal")
+  const [splitPayMethods, setSplitPayMethods] = useState<Record<number, "cash" | "card" | "transfer">>({})
+  const [splitPaid, setSplitPaid] = useState<Record<number, boolean>>({})
+  const [splitAssignments, setSplitAssignments] = useState<Record<string, number | "all">>({})
+  // Transfer between tables
+  const [ordersByTable, setOrdersByTable] = useState<Record<number, OrderItem[]>>({})
+  const [showTransferDialog, setShowTransferDialog] = useState(false)
+  const [transferTargetId, setTransferTargetId] = useState<number | null>(null)
+  const [transferQtyByIndex, setTransferQtyByIndex] = useState<Record<number, number>>({})
+  const [transferProductName, setTransferProductName] = useState<string>("")
+
+  // Roles & auditoría
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>([])
+  const supervisorPIN = "1234"
+  const [showSupervisorDialog, setShowSupervisorDialog] = useState(false)
+  const [supervisorPinInput, setSupervisorPinInput] = useState("")
+  const [supervisorActionLabel, setSupervisorActionLabel] = useState("")
+  const [pendingSupervisorAction, setPendingSupervisorAction] = useState<(() => void) | null>(null)
+  const [supervisorError, setSupervisorError] = useState("")
+
+  // New: simple cash register management for shift/caja
+  const [cashOpen, setCashOpen] = useState(false)
+  const [initialCash, setInitialCash] = useState(0)
+  const [currentCash, setCurrentCash] = useState(0)
+  const [showCashOpen, setShowCashOpen] = useState(false)
+  const [showCashClose, setShowCashClose] = useState(false)
+  const [showCashMove, setShowCashMove] = useState(false)
+  const [cashMoveType, setCashMoveType] = useState<"entrada" | "retiro">("entrada")
+  const [cashMoveAmount, setCashMoveAmount] = useState(0)
+  const [cashMoveReason, setCashMoveReason] = useState("")
+  const [physicalCount, setPhysicalCount] = useState(0)
+
+  // Waiters (meseros) and assignment per table
+  interface Waiter { id: string; name: string }
+  const waiters: Waiter[] = [
+    { id: "w-1", name: "Ana López" },
+    { id: "w-2", name: "Carlos Gómez" },
+    { id: "w-3", name: "María Ruiz" },
+    { id: "w-4", name: "Pedro Sánchez" },
+  ]
+  const [tableWaiter, setTableWaiter] = useState<Record<number, string>>({})
+  const [showAssignWaiter, setShowAssignWaiter] = useState(false)
+  const [pendingAreaTable, setPendingAreaTable] = useState<{ id: number; label: string; seats: number } | null>(null)
+  const [selectedWaiterId, setSelectedWaiterId] = useState<string>("")
+
+  const [selectedSectorId, setSelectedSectorId] = useState<string>(initialSectors[0].id)
+
+  // New: enter POS app after selecting a table from areas
+  const handleSelectAreaTable = (areaTable: { id: number; label: string; seats: number }) => {
+    setPendingAreaTable(areaTable)
+    const preSel = tableWaiter[areaTable.id] || ""
+    setSelectedWaiterId(preSel)
+    setShowAssignWaiter(true)
+  }
+
+  const confirmAssignWaiter = () => {
+    if (!pendingAreaTable) return
+    if (!selectedWaiterId) {
+      toast({ title: "Seleccione un mesero", description: "Debe asignar un mesero a la mesa." })
+      return
+    }
+
+    // Ensure table has accounts (up to 5) and pick one to work with
+    const tableId = pendingAreaTable.id
+    const seats = pendingAreaTable.seats
+    const existingAccounts = accountsByTable[tableId] || []
+    let nextAccounts = existingAccounts
+    if (existingAccounts.length === 0) {
+      nextAccounts = [createAccount(tableId, seats, 1)]
+      setAccountsByTable((prev) => ({ ...prev, [tableId]: nextAccounts }))
+    }
+    // Prefer an unpaid account with items, else first account
+    const preferred =
+      nextAccounts.find((a) => a.status !== "pagado" && a.items.length > 0) ||
+      nextAccounts.find((a) => a.status !== "pagado") ||
+      nextAccounts[0]
+    const mapped: Table = {
+      id: pendingAreaTable.id,
+      number: pendingAreaTable.id,
+      capacity: pendingAreaTable.seats,
+      status: "occupied" as const,
+    }
+    setSelectedTable(mapped)
+    setTableWaiter((prev) => ({ ...prev, [mapped.id]: selectedWaiterId }))
+    updateSectorTableStatus(mapped.id, "occupied")
+    setShowAssignWaiter(false)
+    setMode("app")
+
+    // Load selected account into local state
+    isHydratingAccountRef.current = true
+    setSelectedAccountId(preferred.id)
+    setOrderId(preferred.orderId)
+    setOrderStartTime(new Date(preferred.startTime))
+    setDiners(preferred.diners || seats)
+    setServiceType(preferred.serviceType)
+    setOrderStatus(preferred.status)
+    setDiscountAmount(preferred.discountAmount)
+    setOrderDeducted(preferred.deducted)
+    setCurrentOrder(preferred.items)
+    queueMicrotask(() => {
+      isHydratingAccountRef.current = false
+    })
+
+    const waiter = waiters.find((w) => w.id === selectedWaiterId)
+    logAudit("assign-waiter", `Mesa ${mapped.number} → ${waiter?.name || selectedWaiterId}`)
+  }
+
+  // Keep selected account snapshot in sync while working on a table
+  useEffect(() => {
+    if (isHydratingAccountRef.current) return
+    if (!selectedTable || !selectedAccountId) return
+    upsertSelectedAccountSnapshot()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedTable?.id,
+    selectedAccountId,
+    currentOrder,
     orderId,
     orderStartTime,
     diners,
@@ -509,49 +674,6 @@ import {
   const getModifiersPrice = (mods?: Array<{ group: string; option: string; priceDelta: number }>) =>
     (mods || []).reduce((sum, m) => sum + (m.priceDelta || 0), 0)
 
-  const getSubtotalFromItems = (items: OrderItem[]) => {
-    return items.reduce((sum, item) => {
-      const unit = item.price + getModifiersPrice(item.modifiers)
-      return sum + unit * item.quantity
-    }, 0)
-  }
-
-  const getTaxFromSnapshot = (items: OrderItem[], snapshotDiscountAmount: number) => {
-    const subtotal = getSubtotalFromItems(items)
-    const taxable = Math.max(0, subtotal - snapshotDiscountAmount)
-    return taxable * TAX_RATE
-  }
-
-  const getTotalFromSnapshot = (items: OrderItem[], snapshotDiscountAmount: number) => {
-    const subtotal = getSubtotalFromItems(items)
-    const taxable = Math.max(0, subtotal - snapshotDiscountAmount)
-    return taxable + taxable * TAX_RATE
-  }
-
-  const printPaymentReceipt = (payment: Payment) => {
-    setPrintTicket({
-      kind: "payment",
-      ticketId: payment.orderId,
-      timestamp: payment.timestamp,
-      tableNumber: payment.tableNumber,
-      waiterName: payment.waiterName || "-",
-      serviceType: payment.serviceType,
-      diners: payment.diners,
-      items: payment.items.map((i) => ({ ...i })),
-      discountAmount: payment.discountAmount,
-      tenders: payment.tenders,
-      paidBy: payment.userName,
-    })
-
-    setTimeout(() => {
-      try {
-        window.print()
-      } catch {
-        // ignore
-      }
-    }, 50)
-  }
-
   // Inventory helpers
   const buildRequirementsForItem = (itemId: string, qty: number) => {
     const rec = recipes[itemId] || []
@@ -634,6 +756,57 @@ import {
     // Cancelaciones requieren autorización
     requireSupervisor("Autorizar cancelación de item", exec)
   }
+
+  const openSplitDialog = (people?: number) => {
+    const n = people ?? splitPeople
+    setSplitMode("equal")
+    const methods: Record<number, "cash" | "card" | "transfer"> = {}
+    const paid: Record<number, boolean> = {}
+    for (let i = 1; i <= n; i++) { methods[i] = "cash"; paid[i] = false }
+    setSplitPayMethods(methods)
+    setSplitPaid(paid)
+    const assignments: Record<string, number | "all"> = {}
+    currentOrder.forEach(item => { assignments[item.id] = "all" })
+    setSplitAssignments(assignments)
+    setShowSplitDialog(true)
+  }
+
+  const resetSplitPeople = (n: number) => {
+    const clamped = Math.max(2, Math.min(10, n))
+    setSplitPeople(clamped)
+    const methods: Record<number, "cash" | "card" | "transfer"> = {}
+    const paid: Record<number, boolean> = {}
+    for (let i = 1; i <= clamped; i++) { methods[i] = splitPayMethods[i] ?? "cash"; paid[i] = splitPaid[i] ?? false }
+    setSplitPayMethods(methods)
+    setSplitPaid(paid)
+  }
+
+  const splitPersonTotals = useMemo(() => {
+    const TAX = 0.16
+    // inline subtotal so this memo doesn't depend on a const defined below
+    const sub = currentOrder.reduce((sum, item) => {
+      const mods = item.modifiers?.reduce((s, m) => s + m.priceDelta, 0) ?? 0
+      return sum + (item.price + mods) * item.quantity
+    }, 0)
+    const disc = Math.min(discountAmount, sub)
+    const itemLines = currentOrder.map(item => ({
+      id: item.id,
+      lineTotal: (item.price + (item.modifiers?.reduce((s, m) => s + m.priceDelta, 0) ?? 0)) * item.quantity,
+      assignment: splitAssignments[item.id] ?? "all"
+    }))
+    const equalPoolRaw = itemLines.filter(i => i.assignment === "all").reduce((s, i) => s + i.lineTotal, 0)
+    const equalShare = equalPoolRaw / Math.max(1, splitPeople)
+    const totals: Record<number, number> = {}
+    for (let p = 1; p <= splitPeople; p++) {
+      const assigned = itemLines.filter(i => i.assignment === p).reduce((s, i) => s + i.lineTotal, 0)
+      const personRaw = assigned + equalShare
+      const personDisc = sub > 0 ? (personRaw / sub) * disc : 0
+      const taxable = Math.max(0, personRaw - personDisc)
+      totals[p] = Math.round(taxable * (1 + TAX) * 100) / 100
+    }
+    return totals
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrder, splitPeople, splitAssignments, discountAmount])
 
   const calculateSubtotal = () => {
     return currentOrder.reduce((sum, item) => {
@@ -747,18 +920,6 @@ import {
         return
       }
 
-      const missingCardBatch = tenders.find((t) => t.method === "card" && !t.cardBatch)
-      if (missingCardBatch) {
-        toast({ title: "Falta lote", description: "Ingrese el lote para el pago con tarjeta." })
-        return
-      }
-
-      const missingTransferRef = tenders.find((t) => t.method === "transfer" && !t.transferRef)
-      if (missingTransferRef) {
-        toast({ title: "Falta referencia", description: "Ingrese el No. de depósito/referencia." })
-        return
-      }
-
       const totalDue = Number(calculateTotal().toFixed(2))
       const tenderSum = Number(tenders.reduce((s, t) => s + t.amount, 0).toFixed(2))
       if (Math.abs(tenderSum - totalDue) > 0.01) {
@@ -780,10 +941,7 @@ import {
         userName: currentUser.name,
         invoiced: false,
         items: currentOrder.map((i) => ({ ...i })),
-        diners,
-        serviceType,
-        discountAmount,
-        waiterId: assignedWaiterId,
+        waiterId: waiter?.id,
         waiterName: waiter?.name,
       }
 
@@ -838,11 +996,28 @@ import {
       })
       const tenderLabel = tenders.map((t) => (t.method === "cash" ? "Efectivo" : t.method === "card" ? "Tarjeta" : "Depósito")).join(" + ")
       logAudit("payment", `Mesa ${payment.tableNumber} · $${payment.amount.toFixed(2)} · ${tenderLabel}`)
-
-      // Imprimir recibo de pago (tipo comanda) con métodos
-      printPaymentReceipt(payment)
-      // Volver automáticamente a la vista de áreas/mesas
-      goToTables()
+      
+      // Set print ticket state and print
+      setPrintTicket({
+        kind: "payment",
+        ticketId: payment.orderId,
+        timestamp: payment.timestamp,
+        tableNumber: payment.tableNumber,
+        waiterName: payment.waiterName || "-",
+        serviceType: serviceType,
+        diners: diners,
+        items: payment.items,
+        discountAmount: discountAmount,
+        tenders: payment.tenders,
+        paidBy: payment.userName,
+      })
+      setTimeout(() => {
+        if (typeof window !== "undefined") {
+          window.print()
+          // Volver automáticamente a la vista de áreas/mesas después de imprimir
+          setTimeout(() => goToTables(), 500)
+        }
+      }, 100)
     }
   }
 
@@ -948,12 +1123,15 @@ import {
   }
   const safelyGetStatusText = (status: string) => getTableStatusText(status || "available")
 
+  // Important: never return early before all hooks are declared.
+  if (!sessionReady) {
+    return <div className="min-h-screen bg-background flex items-center justify-center">Cargando...</div>
+  }
+
   const PrintTicketView = (
     <div className="print-only print-ticket mx-auto text-xs text-black">
       <div className="p-3">
         <div className="text-center">
-          {/* Coloca tu logo en /public/logo.png si lo deseas */}
-          {/* <img src="/logo.png" alt="Logo" className="mx-auto mb-1 w-14 h-14 object-contain" /> */}
           <div className="font-bold text-base leading-tight">Restaurante</div>
           <div className="text-[10px] leading-tight">Dirección del local</div>
           <div className="text-[10px] leading-tight">Tel: (000) 000-0000</div>
@@ -998,9 +1176,7 @@ import {
               return (
                 <div key={idx} className="break-inside-avoid">
                   <div className="flex justify-between">
-                    <span className="font-semibold">
-                      {item.quantity} x {item.name}
-                    </span>
+                    <span className="font-semibold">{item.quantity} x {item.name}</span>
                     <span>${line.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-[10px] text-black/70">
@@ -1009,13 +1185,13 @@ import {
                   {item.modifiers && item.modifiers.length > 0 && (
                     <div className="pl-2 text-[10px]">
                       {item.modifiers.map((m, i) => (
-                        <div key={i}>
-                          - {m.group}: {m.option}
-                        </div>
+                        <div key={i}>- {m.group}: {m.option}</div>
                       ))}
                     </div>
                   )}
-                  {item.notes && <div className="pl-2 italic text-[10px]">Obs: {item.notes}</div>}
+                  {item.notes && (
+                    <div className="pl-2 italic text-[10px]">Obs: {item.notes}</div>
+                  )}
                 </div>
               )
             })
@@ -1026,7 +1202,11 @@ import {
         <div className="space-y-1 text-[11px]">
           <div className="flex justify-between">
             <span>Subtotal</span>
-            <span>${(printTicket ? getSubtotalFromItems(printTicket.items) : calculateSubtotal()).toFixed(2)}</span>
+            <span>
+              ${(printTicket 
+                ? printTicket.items.reduce((sum, item) => sum + (item.price + getModifiersPrice(item.modifiers)) * item.quantity, 0) 
+                : calculateSubtotal()).toFixed(2)}
+            </span>
           </div>
           <div className="flex justify-between">
             <span>Descuento</span>
@@ -1035,24 +1215,18 @@ import {
           <div className="flex justify-between">
             <span>IVA (16%)</span>
             <span>
-              ${
-                (printTicket
-                  ? getTaxFromSnapshot(printTicket.items, printTicket.discountAmount)
-                  : calculateTax()
-                ).toFixed(2)
-              }
+              ${(printTicket
+                ? (printTicket.items.reduce((sum, item) => sum + (item.price + getModifiersPrice(item.modifiers)) * item.quantity, 0) - printTicket.discountAmount) * 0.16
+                : calculateTax()).toFixed(2)}
             </span>
           </div>
           <div className="border-t border-dashed border-black my-1" />
           <div className="flex justify-between font-bold">
             <span>Total</span>
             <span>
-              ${
-                (printTicket
-                  ? getTotalFromSnapshot(printTicket.items, printTicket.discountAmount)
-                  : calculateTotal()
-                ).toFixed(2)
-              }
+              ${(printTicket
+                ? (printTicket.items.reduce((sum, item) => sum + (item.price + getModifiersPrice(item.modifiers)) * item.quantity, 0) - printTicket.discountAmount) * 1.16
+                : calculateTotal()).toFixed(2)}
             </span>
           </div>
 
@@ -1087,15 +1261,11 @@ import {
     </div>
   )
 
-  // Important: never return early before all hooks are declared.
-  if (!sessionReady) {
-    return <div className="min-h-screen bg-background flex items-center justify-center">Cargando...</div>
-  }
-
   // Tables-by-area landing view
   if (mode === "tables") {
     const sector = sectors.find((s) => s.id === selectedSectorId)!
     return (
+      <>
       <div className="min-h-screen bg-background no-print">
         <header className="border-b border-border bg-card sticky top-0 z-10">
           <div className="container mx-auto px-4 py-4">
@@ -1154,28 +1324,14 @@ import {
                   <Clock className="w-4 h-4 mr-2" />
                   Cerrar Turno
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <BarChart3 className="w-4 h-4 mr-2" />
-                      Opciones
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel>Gestión de Turno</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setShowReportsDialog(true)}>
-                      <BarChart3 className="w-4 h-4 mr-2" />
-                      Ver Reportes
-                    </DropdownMenuItem>
-                    
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-muted-foreground" onClick={logoutPOS}>
-                      <LogOut className="w-4 h-4 mr-2" />
-                      Cerrar Sesión
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Button variant="outline" size="sm" onClick={() => setShowReportsDialog(true)}>
+                  <BarChart3 className="w-4 h-4 mr-2" />
+                  Reportes
+                </Button>
+                <Button variant="ghost" size="sm" onClick={logoutPOS}>
+                  <LogOut className="w-4 h-4 mr-1" />
+                  Salir
+                </Button>
               </div>
             </div>
           </div>
@@ -1191,78 +1347,69 @@ import {
               ))}
             </TabsList>
 
-                    <>
-                      <div className="min-h-screen bg-background no-print">
-                        <header className="border-b border-border bg-card sticky top-0 z-10">
-                          <div className="container mx-auto px-4 py-4">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <Button variant="ghost" size="icon" onClick={() => router.push("/")}>
-                                  <ArrowLeft className="w-5 h-5" />
-                                </Button>
-                                <div>
-                                  <h1 className="text-xl font-bold">Punto de Venta</h1>
-                                  <p className="text-sm text-muted-foreground">Seleccione un área y una mesa</p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="gap-1">
-                                  <Clock className="w-3 h-3" />
-                                  Turno: {currentUser.name}
-                                </Badge>
-                                <Badge variant="outline" className="gap-1">
-                                  <Users className="w-3 h-3" />
-                                  {allSectorTables.filter((t) => t.status === "occupied").length}/{allSectorTables.length} Ocupadas
-                                </Badge>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="outline" size="sm">
-                                      <CreditCard className="w-4 h-4 mr-2" />
-                                      Caja
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" className="w-56">
-                                    <DropdownMenuLabel>Gestión de Caja</DropdownMenuLabel>
-                                    <DropdownMenuSeparator />
-                                    {!cashOpen ? (
-                                      <DropdownMenuItem
-                                        onClick={() => {
-                                          if (currentUser.role === "mesero") {
-                                            toast({
-                                              title: "Permiso denegado",
-                                              description: "Solo cajero o supervisor pueden abrir caja.",
-                                            })
-                                            return
-                                          }
-                                          setShowCashOpen(true)
-                                        }}
-                                      >
-                                        Abrir Caja
-                                      </DropdownMenuItem>
-                                    ) : (
-                                      <>
-                                        <DropdownMenuItem onClick={() => setShowCashMove(true)}>Movimiento de Caja</DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => setShowCashClose(true)}>Cerrar Caja</DropdownMenuItem>
-                                      </>
-                                    )}
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                                <Button variant="outline" size="sm" onClick={() => setShowShiftDialog(true)}>
-                                  <BarChart3 className="w-4 h-4 mr-2" />
-                                  Turno
-                                </Button>
-                                <Button variant="outline" size="sm" onClick={() => setShowReportsDialog(true)}>
-                                  <BarChart3 className="w-4 h-4 mr-2" />
-                                  Reportes
-                                </Button>
-                                <Button variant="outline" size="sm" onClick={logoutPOS}>
-                                  <LogOut className="w-4 h-4 mr-2" />
-                                  Salir
-                                </Button>
-                              </div>
-                            </div>
+            {sectors.map((s) => (
+              <TabsContent key={s.id} value={s.id}>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {s.tables.map((t) => (
+                    <Card
+                      key={t.id}
+                      className={`cursor-pointer transition-all hover:shadow-md ${
+                        t.status === "available"
+                          ? "border-green-500/40 bg-green-500/10"
+                          : t.status === "occupied"
+                            ? "border-red-500/40 bg-red-500/10"
+                            : "border-yellow-500/40 bg-yellow-500/10"
+                      }`}
+                      onClick={() => t.status !== "reserved" && handleSelectAreaTable(t)}
+                    >
+                      <CardContent className="p-4">
+                        <div className="text-center">
+                          <div className="text-xl font-bold mb-1">Mesa {t.label}</div>
+                          <div className="text-xs mb-2">
+                            <Users className="w-3 h-3 inline mr-1" />
+                            {t.seats} personas
                           </div>
-                        </header>
+                          <Badge variant="outline" className="text-xs">
+                            {t.status === "available" ? "Disponible" : t.status === "occupied" ? "Ocupada" : "Reservada"}
+                          </Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </TabsContent>
+            ))}
+          </Tabs>
+        </main>
+
+        {/* Cash dialogs */}
+        <Dialog open={showCashOpen} onOpenChange={setShowCashOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Abrir Caja</DialogTitle>
+              <DialogDescription>Ingrese el conteo inicial de efectivo</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label>Efectivo inicial</Label>
+              <Input type="number" step="0.01" value={initialCash} onChange={(e) => setInitialCash(Number(e.target.value))} />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowCashOpen(false)}>Cancelar</Button>
+              <Button onClick={openCash} disabled={initialCash < 0}>Abrir Caja</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Discount Dialog */}
+        <Dialog open={showDiscountDialog} onOpenChange={setShowDiscountDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Aplicar descuento</DialogTitle>
+              <DialogDescription>Ingrese un monto fijo a descontar del subtotal</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label>Monto del descuento</Label>
+              <Input type="number" step="0.01" value={discountAmount}
                      onChange={(e) => setDiscountAmount(Math.max(0, Number(e.target.value)))} />
             </div>
             <DialogFooter>
@@ -1274,29 +1421,134 @@ import {
 
         {/* Split Bill Dialog */}
         <Dialog open={showSplitDialog} onOpenChange={setShowSplitDialog}>
-          <DialogContent>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Dividir cuenta</DialogTitle>
-              <DialogDescription>Cálculo simple por número de personas</DialogDescription>
+              <DialogDescription>Reparte el total entre varias personas</DialogDescription>
             </DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <Label>Personas</Label>
-                <Input type="number" min={2} value={splitPeople} onChange={(e) => setSplitPeople(Math.max(2, Number(e.target.value)))} />
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between text-sm">
-                <span>Total</span>
-                <span className="font-medium">${calculateTotal().toFixed(2)}</span>
-              </div>
-              <div className="flex items-center justify-between text-lg font-bold">
-                <span>Cada uno</span>
-                <span className="text-primary">${(calculateTotal() / Math.max(1, splitPeople)).toFixed(2)}</span>
-              </div>
-              <div className="text-xs text-muted-foreground">Nota: Esta es una sugerencia de reparto. Los pagos parciales se implementarán en una versión posterior.</div>
+
+            {/* Mode selector */}
+            <div className="flex gap-2">
+              <Button
+                variant={splitMode === "equal" ? "default" : "outline"}
+                size="sm" className="flex-1"
+                onClick={() => setSplitMode("equal")}
+              >Partes iguales</Button>
+              <Button
+                variant={splitMode === "byItem" ? "default" : "outline"}
+                size="sm" className="flex-1"
+                onClick={() => setSplitMode("byItem")}
+              >Por ítem</Button>
             </div>
-            <DialogFooter>
-              <Button onClick={() => setShowSplitDialog(false)}>Cerrar</Button>
+
+            {/* People counter */}
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium">Personas:</span>
+              <Button variant="outline" size="icon" className="h-7 w-7"
+                onClick={() => resetSplitPeople(splitPeople - 1)}
+                disabled={splitPeople <= 2}
+              ><Minus className="h-3 w-3" /></Button>
+              <span className="w-6 text-center font-bold">{splitPeople}</span>
+              <Button variant="outline" size="icon" className="h-7 w-7"
+                onClick={() => resetSplitPeople(splitPeople + 1)}
+                disabled={splitPeople >= 10}
+              ><Plus className="h-3 w-3" /></Button>
+              <span className="ml-auto text-sm text-muted-foreground">Total: <strong>${calculateTotal().toFixed(2)}</strong></span>
+            </div>
+
+            <Separator />
+
+            {splitMode === "equal" ? (
+              /* ── Equal mode ── */
+              <div className="space-y-2">
+                {Array.from({ length: splitPeople }, (_, i) => i + 1).map(p => (
+                  <div key={p} className="flex items-center gap-2 rounded-lg border p-2">
+                    <span className="text-sm font-medium w-20">Persona {p}</span>
+                    <span className="font-bold text-primary flex-1">${splitPersonTotals[p]?.toFixed(2) ?? "0.00"}</span>
+                    <select
+                      className="text-xs border rounded px-1 py-0.5 bg-background"
+                      value={splitPayMethods[p] ?? "cash"}
+                      onChange={e => setSplitPayMethods(prev => ({ ...prev, [p]: e.target.value as "cash" | "card" | "transfer" }))}
+                      disabled={splitPaid[p]}
+                    >
+                      <option value="cash">Efectivo</option>
+                      <option value="card">Tarjeta</option>
+                      <option value="transfer">Transfer.</option>
+                    </select>
+                    {splitPaid[p] ? (
+                      <Badge variant="default" className="bg-green-600 text-white text-xs">Cobrado</Badge>
+                    ) : (
+                      <Button size="sm" className="h-6 text-xs px-2"
+                        onClick={() => setSplitPaid(prev => ({ ...prev, [p]: true }))}
+                      >Cobrar</Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* ── By item mode ── */
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">Asigna cada ítem a una persona o déjalo como "Todos" para repartirlo equitativamente.</p>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {currentOrder.map(item => (
+                    <div key={item.id} className="flex items-center gap-2 text-sm py-1">
+                      <span className="flex-1 truncate">{item.name} ×{item.quantity}</span>
+                      <span className="text-xs text-muted-foreground w-16 text-right">
+                        ${((item.price + (item.modifiers?.reduce((s, m) => s + m.priceDelta, 0) ?? 0)) * item.quantity).toFixed(2)}
+                      </span>
+                      <select
+                        className="text-xs border rounded px-1 py-0.5 bg-background w-24"
+                        value={splitAssignments[item.id] === "all" ? "all" : String(splitAssignments[item.id] ?? "all")}
+                        onChange={e => setSplitAssignments(prev => ({ ...prev, [item.id]: e.target.value === "all" ? "all" : Number(e.target.value) }))}
+                      >
+                        <option value="all">Todos</option>
+                        {Array.from({ length: splitPeople }, (_, i) => i + 1).map(p => (
+                          <option key={p} value={p}>Persona {p}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+                <Separator />
+                {/* Summary per person */}
+                <div className="space-y-1">
+                  {Array.from({ length: splitPeople }, (_, i) => i + 1).map(p => (
+                    <div key={p} className="flex items-center gap-2 rounded border p-2">
+                      <span className="text-sm font-medium w-20">Persona {p}</span>
+                      <span className="font-bold text-primary flex-1">${splitPersonTotals[p]?.toFixed(2) ?? "0.00"}</span>
+                      <select
+                        className="text-xs border rounded px-1 py-0.5 bg-background"
+                        value={splitPayMethods[p] ?? "cash"}
+                        onChange={e => setSplitPayMethods(prev => ({ ...prev, [p]: e.target.value as "cash" | "card" | "transfer" }))}
+                        disabled={splitPaid[p]}
+                      >
+                        <option value="cash">Efectivo</option>
+                        <option value="card">Tarjeta</option>
+                        <option value="transfer">Transfer.</option>
+                      </select>
+                      {splitPaid[p] ? (
+                        <Badge variant="default" className="bg-green-600 text-white text-xs">Cobrado</Badge>
+                      ) : (
+                        <Button size="sm" className="h-6 text-xs px-2"
+                          onClick={() => setSplitPaid(prev => ({ ...prev, [p]: true }))}
+                        >Cobrar</Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <DialogFooter className="flex-col gap-2 sm:flex-col">
+              <div className="text-xs text-muted-foreground text-center">
+                {Object.values(splitPaid).filter(Boolean).length} / {splitPeople} cobrado(s)
+              </div>
+              {Object.values(splitPaid).filter(Boolean).length === splitPeople && (
+                <Button className="w-full bg-green-600 hover:bg-green-700" onClick={() => { setShowSplitDialog(false) }}>
+                  Cerrar cuenta completa
+                </Button>
+              )}
+              <Button variant="outline" className="w-full" onClick={() => setShowSplitDialog(false)}>Cerrar</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1600,9 +1852,268 @@ import {
           </DialogContent>
         </Dialog>
 
-        {/* (Supervisor PIN Dialog ya está renderizado arriba) */}
-        </div>
-        {PrintTicketView}
+        {/* Supervisor PIN Dialog */}
+        <Dialog open={showSupervisorDialog} onOpenChange={setShowSupervisorDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Autorización de Supervisor</DialogTitle>
+              <DialogDescription>{supervisorActionLabel}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label>PIN de Supervisor</Label>
+              <Input
+                type="password"
+                value={supervisorPinInput}
+                onChange={(e) => setSupervisorPinInput(e.target.value)}
+              />
+              {supervisorError && <div className="text-xs text-destructive">{supervisorError}</div>}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowSupervisorDialog(false)}>Cancelar</Button>
+              <Button
+                onClick={() => {
+                  if (supervisorPinInput === supervisorPIN) {
+                    setShowSupervisorDialog(false)
+                    const cb = pendingSupervisorAction
+                    setPendingSupervisorAction(null)
+                    setSupervisorPinInput("")
+                    setSupervisorError("")
+                    logAudit("supervisor-override", supervisorActionLabel)
+                    cb && cb()
+                  } else {
+                    setSupervisorError("PIN incorrecto")
+                  }
+                }}
+              >
+                Autorizar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Reports Dialog */}
+        <Dialog open={showReportsDialog} onOpenChange={setShowReportsDialog}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Reportes del Turno</DialogTitle>
+              <DialogDescription>
+                Inicio: {currentShift.startTime.toLocaleString()} · Cajero: {currentShift.userName}
+              </DialogDescription>
+            </DialogHeader>
+            <Tabs defaultValue="sales" className="py-2">
+              <TabsList className="grid w-full grid-cols-5">
+                <TabsTrigger value="sales">Ventas</TabsTrigger>
+                <TabsTrigger value="products">Productos</TabsTrigger>
+                <TabsTrigger value="payments">Pagos</TabsTrigger>
+                <TabsTrigger value="reprint">Reimprimir</TabsTrigger>
+                <TabsTrigger value="audits">Auditoría</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="sales" className="space-y-3 mt-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <Card className="border-border">
+                    <CardContent className="p-4">
+                      <div className="text-xs text-muted-foreground">Total del Día</div>
+                      <div className="text-xl font-bold text-primary">${currentShift.totalSales.toFixed(2)}</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border">
+                    <CardContent className="p-4">
+                      <div className="text-xs text-muted-foreground">Órdenes</div>
+                      <div className="text-xl font-bold">{currentShift.totalOrders}</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border">
+                    <CardContent className="p-4">
+                      <div className="text-xs text-muted-foreground">Ticket Promedio</div>
+                      <div className="text-xl font-bold">
+                        ${currentShift.totalOrders > 0 ? (currentShift.totalSales / currentShift.totalOrders).toFixed(2) : "0.00"}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Card className="border-border">
+                    <CardContent className="p-4">
+                      <div className="text-xs text-muted-foreground">Efectivo en caja</div>
+                      <div className="text-lg font-bold text-green-500">${currentCash.toFixed(2)}</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border">
+                    <CardContent className="p-4">
+                      <div className="text-xs text-muted-foreground mb-1">Por método de cobro</div>
+                      <div className="space-y-0.5 text-xs font-medium">
+                        <div className="flex justify-between"><span>Efectivo</span><span className="text-green-500">${currentShift.paymentMethods.cash.toFixed(2)}</span></div>
+                        <div className="flex justify-between"><span>Tarjeta</span><span className="text-blue-500">${currentShift.paymentMethods.card.toFixed(2)}</span></div>
+                        <div className="flex justify-between"><span>Transferencia</span><span className="text-purple-500">${currentShift.paymentMethods.transfer.toFixed(2)}</span></div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="products" className="mt-3">
+                <Card className="border-border">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Productos vendidos en el turno</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-64">
+                      {Object.keys(currentShift.productsUsed).length === 0 ? (
+                        <div className="text-center text-muted-foreground py-8 text-sm">Sin ventas registradas aún</div>
+                      ) : (
+                        <div className="space-y-2">
+                          {Object.entries(currentShift.productsUsed)
+                            .sort(([, a], [, b]) => b - a)
+                            .map(([product, quantity]) => {
+                              const revenue = payments.reduce((sum, p) => {
+                                return sum + p.items.filter((i) => i.name === product).reduce((s, i) => s + i.price * i.quantity, 0)
+                              }, 0)
+                              return (
+                                <div key={product} className="flex justify-between items-center border-b border-border pb-2 last:border-0">
+                                  <div>
+                                    <div className="text-sm font-medium">{product}</div>
+                                    <div className="text-xs text-muted-foreground">{quantity} unid.</div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="font-bold text-primary text-sm">${revenue.toFixed(2)}</div>
+                                    <div className="text-[10px] text-muted-foreground">en ventas</div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="payments" className="space-y-3 mt-3">
+                <div className="grid grid-cols-3 gap-3">
+                  {(
+                    [
+                      { label: "Efectivo", key: "cash" as const, color: "text-green-500", bar: "bg-green-500" },
+                      { label: "Tarjeta", key: "card" as const, color: "text-blue-500", bar: "bg-blue-500" },
+                      { label: "Transferencia", key: "transfer" as const, color: "text-purple-500", bar: "bg-purple-500" },
+                    ] as const
+                  ).map(({ label, key, color, bar }) => {
+                    const amount = currentShift.paymentMethods[key]
+                    const pct = currentShift.totalSales > 0 ? (amount / currentShift.totalSales) * 100 : 0
+                    return (
+                      <Card key={key} className="border-border">
+                        <CardContent className="p-4 text-center">
+                          <div className="text-xs text-muted-foreground mb-1">{label}</div>
+                          <div className={`text-xl font-bold ${color}`}>${amount.toFixed(2)}</div>
+                          <div className="text-xs text-muted-foreground mt-1">{pct.toFixed(1)}%</div>
+                          <div className="mt-2 w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div className={`h-full ${bar}`} style={{ width: `${pct}%` }} />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="reprint" className="mt-3">
+                {payments.length === 0 ? (
+                  <div className="text-center text-muted-foreground py-12">
+                    <FileText className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                    <p className="text-sm">No hay tickets en este turno</p>
+                  </div>
+                ) : (
+                  <ScrollArea className="h-72">
+                    <div className="space-y-2 pr-1">
+                      {payments.slice().reverse().map((p) => (
+                        <Card key={p.id} className="border-border">
+                          <CardContent className="p-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-medium text-sm">Mesa {p.tableNumber} · {p.orderId}</div>
+                                <div className="text-xs text-muted-foreground">{p.timestamp.toLocaleString()}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {p.tenders.map((t) => t.method === "cash" ? "Efectivo" : t.method === "card" ? `Tarjeta${t.cardBatch ? ` (Lote ${t.cardBatch})` : ""}` : `Depósito${t.transferRef ? ` (${t.transferRef})` : ""}`).join(" + ")}
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-1.5">
+                                <div className="font-bold text-primary">${p.amount.toFixed(2)}</div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="bg-transparent h-7 text-xs"
+                                  onClick={() => {
+                                    setPrintTicket({
+                                      kind: "payment",
+                                      ticketId: p.orderId,
+                                      timestamp: p.timestamp,
+                                      tableNumber: p.tableNumber,
+                                      waiterName: p.waiterName || "-",
+                                      serviceType: "mesa",
+                                      diners: 1,
+                                      items: p.items,
+                                      discountAmount: 0,
+                                      tenders: p.tenders,
+                                      paidBy: p.userName,
+                                    })
+                                    setShowReportsDialog(false)
+                                    setTimeout(() => {
+                                      if (typeof window !== "undefined") {
+                                        window.print()
+                                        logAudit("reprint", p.id)
+                                      }
+                                    }, 150)
+                                  }}
+                                >
+                                  Reimprimir
+                                </Button>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
+              </TabsContent>
+
+              <TabsContent value="audits" className="mt-3">
+                <Card className="border-border">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Registro de Auditoría</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-64">
+                      {auditLog.length === 0 ? (
+                        <div className="text-sm text-muted-foreground text-center py-4">Sin eventos</div>
+                      ) : (
+                        <div className="space-y-2 text-sm">
+                          {auditLog.slice().reverse().map((a) => (
+                            <div key={a.id} className="flex items-start justify-between border-b border-border pb-2 last:border-0">
+                              <div className="flex-1 pr-4">
+                                <div className="font-medium">{a.action}</div>
+                                {a.description && <div className="text-muted-foreground text-xs">{a.description}</div>}
+                              </div>
+                              <div className="text-right text-xs text-muted-foreground">
+                                <div>{a.userName} · {a.role}</div>
+                                <div>{a.timestamp.toLocaleString()}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+            <DialogFooter>
+              <Button onClick={() => setShowReportsDialog(false)}>Cerrar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+      {PrintTicketView}
       </>
     )
   }
@@ -1631,6 +2142,10 @@ import {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowReportsDialog(true)}>
+                <BarChart3 className="w-4 h-4 mr-2" />
+                Reportes
+              </Button>
               {selectedTable && (
                 <div className="hidden md:flex items-center gap-2">
                   <Label className="text-xs">Cuenta</Label>
@@ -1999,7 +2514,7 @@ import {
                         <Button
                           variant="outline"
                           className="w-full bg-transparent"
-                          disabled={currentOrder.length === 0}
+                          disabled={!selectedTable}
                           onClick={() => {
                             setTransferQtyByIndex({})
                             setTransferTargetId(null)
@@ -2014,11 +2529,25 @@ import {
                           className="w-full bg-transparent"
                           disabled={currentOrder.length === 0}
                           onClick={() => {
-                            if (typeof window !== 'undefined') {
-                              window.print()
-                              toast({ title: "Imprimiendo cuenta", description: orderId || '' })
-                              logAudit("order-print", orderId || '')
-                            }
+                            setPrintTicket({
+                              kind: "precount",
+                              ticketId: orderId || "-",
+                              timestamp: orderStartTime || new Date(),
+                              tableNumber: selectedTable?.number,
+                              waiterName: selectedTable ? (waiters.find(w => w.id === (tableWaiter[selectedTable.id] || ""))?.name || "-") : "-",
+                              serviceType: serviceType,
+                              diners: diners,
+                              items: currentOrder,
+                              discountAmount: discountAmount,
+                              tenders: [],
+                            })
+                            setTimeout(() => {
+                              if (typeof window !== 'undefined') {
+                                window.print()
+                                toast({ title: "Imprimiendo cuenta", description: orderId || '' })
+                                logAudit("order-print", orderId || '')
+                              }
+                            }, 100)
                           }}
                         >
                           Imprimir comanda
@@ -2042,8 +2571,8 @@ import {
                         <Button
                           variant="outline"
                           className="w-full bg-transparent"
-                          disabled={currentOrder.length === 0}
-                          onClick={() => setShowSplitDialog(true)}
+                          disabled={!selectedTable}
+                          onClick={() => openSplitDialog()}
                         >
                           Dividir cuenta
                         </Button>
@@ -2598,18 +3127,21 @@ import {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Reportes del Turno</DialogTitle>
-            <DialogDescription>Análisis detallado de ventas y operaciones</DialogDescription>
+            <DialogDescription>
+              Inicio: {currentShift.startTime.toLocaleString()} · Cajero: {currentShift.userName}
+            </DialogDescription>
           </DialogHeader>
-          <Tabs defaultValue="sales" className="py-4">
-            <TabsList className="grid w-full grid-cols-4">
+          <Tabs defaultValue="sales" className="py-2">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="sales">Ventas</TabsTrigger>
               <TabsTrigger value="products">Productos</TabsTrigger>
-              <TabsTrigger value="payments">Métodos de Pago</TabsTrigger>
+              <TabsTrigger value="payments">Pagos</TabsTrigger>
+              <TabsTrigger value="reprint">Reimprimir</TabsTrigger>
               <TabsTrigger value="audits">Auditoría</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="sales" className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
+            <TabsContent value="sales" className="space-y-3 mt-3">
+              <div className="grid grid-cols-3 gap-3">
                 <Card className="border-border">
                   <CardContent className="p-4">
                     <div className="text-xs text-muted-foreground">Total del Día</div>
@@ -2634,114 +3166,216 @@ import {
                   </CardContent>
                 </Card>
               </div>
-
-              <Card className="border-border">
-                <CardHeader>
-                  <CardTitle className="text-base">Ventas por Usuario</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center">
-                    <span>{currentShift.userName}</span>
-                    <span className="font-bold">${currentShift.totalSales.toFixed(2)}</span>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="grid grid-cols-2 gap-3">
+                <Card className="border-border">
+                  <CardContent className="p-4">
+                    <div className="text-xs text-muted-foreground">Efectivo en caja</div>
+                    <div className="text-lg font-bold text-green-500">${currentCash.toFixed(2)}</div>
+                  </CardContent>
+                </Card>
+                <Card className="border-border">
+                  <CardContent className="p-4">
+                    <div className="text-xs text-muted-foreground mb-1">Por método de cobro</div>
+                    <div className="space-y-0.5 text-xs font-medium">
+                      <div className="flex justify-between"><span>Efectivo</span><span className="text-green-500">${currentShift.paymentMethods.cash.toFixed(2)}</span></div>
+                      <div className="flex justify-between"><span>Tarjeta</span><span className="text-blue-500">${currentShift.paymentMethods.card.toFixed(2)}</span></div>
+                      <div className="flex justify-between"><span>Transferencia</span><span className="text-purple-500">${currentShift.paymentMethods.transfer.toFixed(2)}</span></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </TabsContent>
 
-            <TabsContent value="products" className="space-y-4">
+            <TabsContent value="products" className="mt-3">
               <Card className="border-border">
-                <CardHeader>
-                  <CardTitle className="text-base">Productos Más Vendidos</CardTitle>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Productos vendidos en el turno</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ScrollArea className="h-64">
-                    <div className="space-y-3">
-                      {Object.entries(currentShift.productsUsed)
-                        .sort(([, a], [, b]) => b - a)
-                        .map(([product, quantity]) => (
-                          <div key={product} className="flex justify-between items-center">
-                            <span className="text-sm">{product}</span>
-                            <Badge variant="outline">{quantity} unidades</Badge>
-                          </div>
-                        ))}
-                    </div>
+                    {Object.keys(currentShift.productsUsed).length === 0 ? (
+                      <div className="text-center text-muted-foreground py-8 text-sm">Sin ventas registradas aún</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {Object.entries(currentShift.productsUsed)
+                          .sort(([, a], [, b]) => b - a)
+                          .map(([product, quantity]) => {
+                            const revenue = payments.reduce((sum, p) => {
+                              return sum + p.items
+                                .filter((i) => i.name === product)
+                                .reduce((s, i) => s + i.price * i.quantity, 0)
+                            }, 0)
+                            return (
+                              <div key={product} className="flex justify-between items-center border-b border-border pb-2 last:border-0">
+                                <div>
+                                  <div className="text-sm font-medium">{product}</div>
+                                  <div className="text-xs text-muted-foreground">{quantity} unid.</div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="font-bold text-primary text-sm">${revenue.toFixed(2)}</div>
+                                  <div className="text-[10px] text-muted-foreground">en ventas</div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                      </div>
+                    )}
                   </ScrollArea>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            <TabsContent value="payments" className="space-y-4">
+            <TabsContent value="payments" className="space-y-3 mt-3">
+              <div className="grid grid-cols-3 gap-3">
+                {(
+                  [
+                    { label: "Efectivo", key: "cash" as const, color: "text-green-500", bar: "bg-green-500" },
+                    { label: "Tarjeta", key: "card" as const, color: "text-blue-500", bar: "bg-blue-500" },
+                    { label: "Transferencia", key: "transfer" as const, color: "text-purple-500", bar: "bg-purple-500" },
+                  ] as const
+                ).map(({ label, key, color, bar }) => {
+                  const amount = currentShift.paymentMethods[key]
+                  const pct = currentShift.totalSales > 0 ? (amount / currentShift.totalSales) * 100 : 0
+                  return (
+                    <Card key={key} className="border-border">
+                      <CardContent className="p-4 text-center">
+                        <div className="text-xs text-muted-foreground mb-1">{label}</div>
+                        <div className={`text-xl font-bold ${color}`}>${amount.toFixed(2)}</div>
+                        <div className="text-xs text-muted-foreground mt-1">{pct.toFixed(1)}%</div>
+                        <div className="mt-2 w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className={`h-full ${bar}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
               <Card className="border-border">
-                <CardHeader>
-                  <CardTitle className="text-base">Distribución por Método de Pago</CardTitle>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Detalle de pagos del turno</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Efectivo</span>
-                      <div className="flex items-center gap-2">
-                        <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-green-500"
-                            style={{ width: `${(currentShift.paymentMethods.cash / currentShift.totalSales) * 100}%` }}
-                          />
-                        </div>
-                        <span className="font-medium w-20 text-right">
-                          ${currentShift.paymentMethods.cash.toFixed(2)}
-                        </span>
+                <CardContent>
+                  <ScrollArea className="h-40">
+                    {payments.length === 0 ? (
+                      <div className="text-sm text-muted-foreground text-center py-4">Sin pagos registrados</div>
+                    ) : (
+                      <div className="space-y-1 text-sm">
+                        {payments
+                          .slice()
+                          .reverse()
+                          .map((p) => (
+                            <div key={p.id} className="flex justify-between border-b border-border pb-1.5 last:border-0">
+                              <div>
+                                <span className="font-medium">Mesa {p.tableNumber}</span>
+                                <span className="text-muted-foreground text-xs ml-2">
+                                  {p.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">
+                                  {p.tenders.map((t) => (t.method === "cash" ? "Ef" : t.method === "card" ? "Tj" : "Tr")).join("+")}
+                                </span>
+                                <span className="font-bold">${p.amount.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          ))}
                       </div>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Tarjeta</span>
-                      <div className="flex items-center gap-2">
-                        <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-blue-500"
-                            style={{ width: `${(currentShift.paymentMethods.card / currentShift.totalSales) * 100}%` }}
-                          />
-                        </div>
-                        <span className="font-medium w-20 text-right">
-                          ${currentShift.paymentMethods.card.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Transferencia</span>
-                      <div className="flex items-center gap-2">
-                        <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-purple-500"
-                            style={{
-                              width: `${(currentShift.paymentMethods.transfer / currentShift.totalSales) * 100}%`,
-                            }}
-                          />
-                        </div>
-                        <span className="font-medium w-20 text-right">
-                          ${currentShift.paymentMethods.transfer.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                    )}
+                  </ScrollArea>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            <TabsContent value="audits" className="space-y-4">
+            <TabsContent value="reprint" className="mt-3">
+              {payments.length === 0 ? (
+                <div className="text-center text-muted-foreground py-12">
+                  <FileText className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                  <p className="text-sm">No hay tickets en este turno</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-72">
+                  <div className="space-y-2 pr-1">
+                    {payments
+                      .slice()
+                      .reverse()
+                      .map((p) => (
+                        <Card key={p.id} className="border-border">
+                          <CardContent className="p-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-medium text-sm">
+                                  Mesa {p.tableNumber} · {p.orderId}
+                                </div>
+                                <div className="text-xs text-muted-foreground">{p.timestamp.toLocaleString()}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {p.tenders
+                                    .map((t) =>
+                                      t.method === "cash"
+                                        ? "Efectivo"
+                                        : t.method === "card"
+                                          ? `Tarjeta${t.cardBatch ? ` (Lote ${t.cardBatch})` : ""}`
+                                          : `Depósito${t.transferRef ? ` (${t.transferRef})` : ""}`,
+                                    )
+                                    .join(" + ")}
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-1.5">
+                                <div className="font-bold text-primary">${p.amount.toFixed(2)}</div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="bg-transparent h-7 text-xs"
+                                  onClick={() => {
+                                    setPrintTicket({
+                                      kind: "payment",
+                                      ticketId: p.orderId,
+                                      timestamp: p.timestamp,
+                                      tableNumber: p.tableNumber,
+                                      waiterName: p.waiterName || "-",
+                                      serviceType: "mesa",
+                                      diners: 1,
+                                      items: p.items,
+                                      discountAmount: 0,
+                                      tenders: p.tenders,
+                                      paidBy: p.userName,
+                                    })
+                                    setShowReportsDialog(false)
+                                    setTimeout(() => {
+                                      if (typeof window !== "undefined") {
+                                        window.print()
+                                        logAudit("reprint", p.id)
+                                      }
+                                    }, 150)
+                                  }}
+                                >
+                                  Reimprimir
+                                </Button>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </TabsContent>
+
+            <TabsContent value="audits" className="mt-3">
               <Card className="border-border">
-                <CardHeader>
+                <CardHeader className="pb-2">
                   <CardTitle className="text-base">Registro de Auditoría</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ScrollArea className="h-64">
                     {auditLog.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">Sin eventos</div>
+                      <div className="text-sm text-muted-foreground text-center py-4">Sin eventos</div>
                     ) : (
                       <div className="space-y-2 text-sm">
                         {auditLog
                           .slice()
                           .reverse()
                           .map((a) => (
-                            <div key={a.id} className="flex items-start justify-between border-b pb-2">
+                            <div key={a.id} className="flex items-start justify-between border-b border-border pb-2 last:border-0">
                               <div className="flex-1 pr-4">
                                 <div className="font-medium">{a.action}</div>
                                 {a.description && (
@@ -2769,142 +3403,7 @@ import {
         </DialogContent>
       </Dialog>
     </div>
-
-    {/* PRINT: Customer ticket (80mm) */}
-    <div className="print-only print-ticket mx-auto text-xs text-black">
-      <div className="p-3">
-        <div className="text-center">
-          {/* Coloca tu logo en /public/logo.png si lo deseas */}
-          {/* <img src="/logo.png" alt="Logo" className="mx-auto mb-1 w-14 h-14 object-contain" /> */}
-          <div className="font-bold text-base leading-tight">Restaurante</div>
-          <div className="text-[10px] leading-tight">Dirección del local</div>
-          <div className="text-[10px] leading-tight">Tel: (000) 000-0000</div>
-        </div>
-
-        <div className="my-2 border-t border-dashed border-black" />
-        <div className="text-center font-bold">{printTicket?.kind === "payment" ? "RECIBO DE PAGO" : "CUENTA / TICKET"}</div>
-        <div className="mt-1 flex items-start justify-between text-[11px]">
-          <span>Ticket: {printTicket ? printTicket.ticketId : orderId || "-"}</span>
-          <span>{(printTicket ? printTicket.timestamp : orderStartTime || new Date()).toLocaleString()}</span>
-        </div>
-        <div className="mt-1 text-[11px]">
-          <div>Mesa: {printTicket ? printTicket.tableNumber ?? "-" : selectedTable ? selectedTable.number : "-"}</div>
-          <div>
-            Mesero:{" "}
-            {printTicket
-              ? printTicket.waiterName
-              : selectedTable
-                ? waiters.find((w) => w.id === (tableWaiter[selectedTable.id] || ""))?.name || "-"
-                : "-"}
-          </div>
-          <div>
-            Servicio:{" "}
-            {(printTicket ? printTicket.serviceType : serviceType) === "mesa"
-              ? "En mesa"
-              : (printTicket ? printTicket.serviceType : serviceType) === "para_llevar"
-                ? "Para llevar"
-                : "Domicilio"}
-          </div>
-          <div>Comensales: {printTicket ? printTicket.diners : diners}</div>
-          {printTicket?.kind === "payment" ? <div>Cajero: {printTicket.paidBy}</div> : null}
-        </div>
-
-        <div className="my-2 border-t border-dashed border-black" />
-        <div className="space-y-1">
-          {(printTicket ? printTicket.items : currentOrder).length === 0 ? (
-            <div className="text-center text-[11px]">Sin items</div>
-          ) : (
-            (printTicket ? printTicket.items : currentOrder).map((item, idx) => {
-              const unit = item.price + getModifiersPrice(item.modifiers)
-              const line = unit * item.quantity
-              return (
-                <div key={idx} className="break-inside-avoid">
-                  <div className="flex justify-between">
-                    <span className="font-semibold">{item.quantity} x {item.name}</span>
-                    <span>${line.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-[10px] text-black/70">
-                    <span>Precio c/u: ${unit.toFixed(2)}</span>
-                  </div>
-                  {item.modifiers && item.modifiers.length > 0 && (
-                    <div className="pl-2 text-[10px]">
-                      {item.modifiers.map((m, i) => (
-                        <div key={i}>- {m.group}: {m.option}</div>
-                      ))}
-                    </div>
-                  )}
-                  {item.notes && (
-                    <div className="pl-2 italic text-[10px]">Obs: {item.notes}</div>
-                  )}
-                </div>
-              )
-            })
-          )}
-        </div>
-
-        <div className="my-2 border-t border-dashed border-black" />
-        <div className="space-y-1 text-[11px]">
-          <div className="flex justify-between">
-            <span>Subtotal</span>
-            <span>${(printTicket ? getSubtotalFromItems(printTicket.items) : calculateSubtotal()).toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Descuento</span>
-            <span>- ${(printTicket ? printTicket.discountAmount : discountAmount).toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>IVA (16%)</span>
-            <span>
-              ${
-                (printTicket
-                  ? getTaxFromSnapshot(printTicket.items, printTicket.discountAmount)
-                  : calculateTax()
-                ).toFixed(2)
-              }
-            </span>
-          </div>
-          <div className="border-t border-dashed border-black my-1" />
-          <div className="flex justify-between font-bold">
-            <span>Total</span>
-            <span>
-              ${
-                (printTicket
-                  ? getTotalFromSnapshot(printTicket.items, printTicket.discountAmount)
-                  : calculateTotal()
-                ).toFixed(2)
-              }
-            </span>
-          </div>
-
-          {printTicket?.kind === "payment" ? (
-            <>
-              <div className="border-t border-dashed border-black my-1" />
-              <div className="font-bold">Forma de pago</div>
-              <div className="space-y-0.5">
-                {printTicket.tenders.map((t) => (
-                  <div key={t.id} className="flex justify-between">
-                    <span>
-                      {t.method === "cash"
-                        ? "Efectivo"
-                        : t.method === "card"
-                          ? `Tarjeta${t.cardBatch ? ` (Lote ${t.cardBatch})` : ""}`
-                          : `Depósito${t.transferRef ? ` (No. ${t.transferRef})` : ""}`}
-                    </span>
-                    <span>${t.amount.toFixed(2)}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="text-center mt-2 text-[10px]">Recibo no fiscal</div>
-            </>
-          ) : (
-            <div className="text-center mt-2 text-[10px]">Precuenta no fiscal</div>
-          )}
-        </div>
-
-        <div className="my-2 border-t border-dashed border-black" />
-        <div className="text-center text-[10px]">¡Gracias por su preferencia!</div>
-      </div>
-    </div>
+    {PrintTicketView}
     </>
   )
 }
