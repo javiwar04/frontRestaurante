@@ -1,14 +1,14 @@
 "use client"
 
 import ModuleLoginForm from "@/components/module-login-form"
-import { Package } from "lucide-react"
+import { ChefHat } from "lucide-react"
 
-export default function InventoryLoginPage() {
+export default function KitchenLoginPage() {
   return (
     <ModuleLoginForm
-      module="inventory"
-      title="Inventario"
-      Icon={Package}
+      module="kitchen"
+      title="Cocina"
+      Icon={ChefHat}
       iconBgClass="bg-orange-500/10"
       iconColorClass="text-orange-500"
     />

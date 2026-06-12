@@ -1,12 +1,14 @@
-"use client"
+﻿"use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { useRouter } from "next/navigation"
+import { cocina, type CocinaOrden } from "@/lib/api"
+import { connectRealtime } from "@/lib/realtime"
 import {
   ArrowLeft,
   Bell,
@@ -15,7 +17,6 @@ import {
   CheckCircle2,
   Circle,
   Clock,
-  Plus,
   RotateCcw,
 } from "lucide-react"
 
@@ -30,9 +31,11 @@ interface KitchenItem {
 }
 
 interface KitchenOrder {
-  id: number
+  id: string
   table: number
   section: string
+  waiter: string
+  serviceType: string
   items: KitchenItem[]
   status: "pending" | "preparing" | "ready"
   arrivedAt: number   // Date.now() timestamp
@@ -41,32 +44,37 @@ interface KitchenOrder {
   isNew: boolean      // flashes briefly when just added
 }
 
-// ─── Seed data ───────────────────────────────────────────────────────────────
+// ─── API mapping helper ───────────────────────────────────────────────────────
 
-const now = Date.now()
-
-const seedOrders: KitchenOrder[] = [
-  { id: 1, table: 2, section: "Interior", priority: "high",  status: "pending",   arrivedAt: now - 2 * 60000,              isNew: false, items: [{ id: "a1", name: "Hamburguesa Clásica", quantity: 2, notes: "Sin cebolla",    done: false }, { id: "a2", name: "Papas Fritas",         quantity: 2, notes: "",             done: false }] },
-  { id: 2, table: 5, section: "Terraza",  priority: "normal", status: "preparing", arrivedAt: now - 8 * 60000,  startedAt: now - 6 * 60000, isNew: false, items: [{ id: "b1", name: "Pizza Margarita",    quantity: 1, notes: "Extra queso",    done: false }, { id: "b2", name: "Ensalada César",       quantity: 1, notes: "",             done: true  }] },
-  { id: 3, table: 7, section: "Terraza",  priority: "normal", status: "preparing", arrivedAt: now - 12 * 60000, startedAt: now - 9 * 60000, isNew: false, items: [{ id: "c1", name: "Pasta Carbonara",   quantity: 1, notes: "",             done: true  }, { id: "c2", name: "Alitas Picantes",     quantity: 1, notes: "Muy picante",  done: false }, { id: "c3", name: "Cerveza Artesanal",   quantity: 2, notes: "",             done: true  }] },
-  { id: 4, table: 1, section: "Barra",    priority: "high",  status: "pending",   arrivedAt: now - 1 * 60000,              isNew: false, items: [{ id: "d1", name: "Ensalada César",   quantity: 2, notes: "",             done: false }, { id: "d2", name: "Limonada Natural",    quantity: 2, notes: "",             done: false }] },
-  { id: 5, table: 4, section: "Interior", priority: "normal", status: "ready",     arrivedAt: now - 20 * 60000, startedAt: now - 18 * 60000, isNew: false, items: [{ id: "e1", name: "Tiramisú",           quantity: 1, notes: "",             done: true  }, { id: "e2", name: "Brownie con Helado",  quantity: 1, notes: "",             done: true  }] },
-]
-
-const SIMULATED_DISHES = [
-  { name: "Tacos de Birria",      note: "Salsa verde aparte" },
-  { name: "Enchiladas Verdes",    note: "" },
-  { name: "Pozole Rojo",          note: "Extra tostadas" },
-  { name: "Quesadilla de Flor",   note: "" },
-  { name: "Caldo de Res",         note: "Con verduras" },
-  { name: "Chiles en Nogada",     note: "" },
-  { name: "Sopa de Lima",         note: "Picante" },
-  { name: "Tlayuda Oaxaqueña",    note: "" },
-  { name: "Agua de Jamaica",      note: "Sin azúcar" },
-  { name: "Helado de Guanábana",  note: "" },
-]
-
-let nextOrderId = 10
+function apiToKitchenOrder(o: CocinaOrden, prevOrders: KitchenOrder[]): KitchenOrder {
+  const prev = prevOrders.find(p => p.id === o.id)
+  const svcLabel = o.tipoServicio === "mesa" ? "Mesa"
+    : o.tipoServicio === "para_llevar" ? "Para llevar"
+    : o.tipoServicio === "delivery" ? "Domicilio"
+    : o.tipoServicio
+  return {
+    id: o.id,
+    table: o.numeroMesa ?? 0,
+    section: "",
+    waiter: o.meseroNombre ?? "",
+    serviceType: svcLabel,
+    items: o.items.map(i => ({
+      id: String(i.id),
+      name: i.platilloNombre || i.nombre || "(sin nombre)",
+      quantity: i.cantidad,
+      notes: i.notas ?? "",
+      done: i.estado === "listo",
+    })),
+    // "pendiente" es el estado real con que nacen las órdenes en backend
+    status: (o.estado === "abierta" || (o.estado as string) === "pendiente") ? "pending"
+      : o.estado === "en_cocina" ? "preparing"
+      : "ready",
+    arrivedAt: prev?.arrivedAt ?? new Date(o.creadoEn).getTime(),
+    startedAt: prev?.startedAt,
+    priority: "normal",
+    isNew: false,
+  }
+}
 
 // ─── Audio helpers ────────────────────────────────────────────────────────────
 
@@ -110,18 +118,52 @@ const elapsedColor = (ts: number, nowMs: number, status: string) => {
 
 export default function KitchenPage() {
   const router = useRouter()
-  const [orders, setOrders] = useState<KitchenOrder[]>(seedOrders)
+  const [sessionReady, setSessionReady] = useState(false)
+  const [orders, setOrders] = useState<KitchenOrder[]>([])
   const [filter, setFilter] = useState<"all" | "pending" | "preparing" | "ready">("all")
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [alertBanner, setAlertBanner] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(Date.now())
-  const prevPendingCount = useRef(seedOrders.filter(o => o.status === "pending").length)
+  const prevPendingCount = useRef(0)
+  const knownIds = useRef<Set<string>>(new Set())
+
+  // ── No login required — kitchen is open access ────────────────────────────
+  useEffect(() => {
+    setSessionReady(true)
+  }, [])
 
   // ── Live clock: updates every 30 s to refresh elapsed times ───────────────
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 30_000)
     return () => clearInterval(t)
   }, [])
+
+  // ── Tiempo real (SignalR) + polling de respaldo cada 20 s ─────────────────
+  useEffect(() => {
+    if (!sessionReady) return
+    const fetchOrders = async () => {
+      try {
+        const apiOrders = await cocina.getOrdenes()
+        setOrders(prev => {
+          const mapped = apiOrders.map(o => {
+            const ko = apiToKitchenOrder(o, prev)
+            const isNew = !knownIds.current.has(ko.id)
+            if (isNew) knownIds.current.add(ko.id)
+            return { ...ko, isNew }
+          })
+          return mapped
+        })
+        setNowMs(Date.now())
+      } catch { /* ignore network errors */ }
+    }
+    fetchOrders()
+    const t = setInterval(fetchOrders, 20_000)
+    const conn = connectRealtime(() => { fetchOrders() })
+    return () => {
+      clearInterval(t)
+      conn.stop().catch(() => {})
+    }
+  }, [sessionReady])
 
   // ── Auto-clear "isNew" flag after 6 s ─────────────────────────────────────
   useEffect(() => {
@@ -146,53 +188,38 @@ export default function KitchenPage() {
     prevPendingCount.current = pendingCount
   }, [orders, soundEnabled])
 
-  // ── Simulate a new order arriving ─────────────────────────────────────────
-  const simulateNewOrder = useCallback(() => {
-    const tables  = [1, 2, 3, 4, 5, 6, 7, 8]
-    const sections = ["Interior", "Terraza", "Barra"]
-    const qty1 = Math.floor(Math.random() * 2) + 1
-    const qty2 = Math.floor(Math.random() * 2) + 1
-    const dish1 = SIMULATED_DISHES[Math.floor(Math.random() * SIMULATED_DISHES.length)]
-    const dish2 = SIMULATED_DISHES[Math.floor(Math.random() * SIMULATED_DISHES.length)]
-    const id = nextOrderId++
-    setOrders(prev => [
-      ...prev,
-      {
-        id,
-        table:    tables[Math.floor(Math.random() * tables.length)],
-        section:  sections[Math.floor(Math.random() * sections.length)],
-        priority: Math.random() > 0.65 ? "high" : "normal",
-        status:   "pending",
-        arrivedAt: Date.now(),
-        isNew:    true,
-        items: [
-          { id: `${id}-1`, name: dish1.name, quantity: qty1, notes: dish1.note, done: false },
-          { id: `${id}-2`, name: dish2.name, quantity: qty2, notes: dish2.note, done: false },
-        ],
-      },
-    ])
-    setNowMs(Date.now())
-  }, [])
-
   // ── Order actions ──────────────────────────────────────────────────────────
-  const startOrder = (id: number) =>
+  const startOrder = (id: string) => {
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status: "preparing", startedAt: Date.now() } : o))
+    cocina.iniciar(id).catch(() => {})
+  }
 
-  const readyOrder = (id: number) =>
+  const readyOrder = (id: string) => {
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status: "ready" } : o))
+    cocina.listo(id).catch(() => {})
+  }
 
-  const resetOrder = (id: number) =>
+  const resetOrder = (id: string) => {
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status: "pending", startedAt: undefined } : o))
+    cocina.reiniciar(id).catch(() => {})
+  }
 
-  const dismissOrder = (id: number) =>
+  const dismissOrder = (id: string) =>
     setOrders(prev => prev.filter(o => o.id !== id))
 
-  const toggleItemDone = (orderId: number, itemId: string) =>
+  const toggleItemDone = (orderId: string, itemId: string) => {
+    // Optimista en pantalla + persistencia en backend (antes el check era
+    // solo local y cada refresco lo borraba)
+    const order = orders.find(o => o.id === orderId)
+    const item = order?.items.find(i => i.id === itemId)
+    if (!item) return
     setOrders(prev => prev.map(o =>
       o.id === orderId
         ? { ...o, items: o.items.map(i => i.id === itemId ? { ...i, done: !i.done } : i) }
         : o
     ))
+    cocina.setItemEstado(orderId, itemId, item.done ? "pendiente" : "listo").catch(() => {})
+  }
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const filteredOrders = filter === "all" ? orders : orders.filter(o => o.status === filter)
@@ -261,11 +288,7 @@ export default function KitchenPage() {
                 {soundEnabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
                 <span className="ml-1 hidden sm:inline">{soundEnabled ? "Sonido ON" : "Silencio"}</span>
               </Button>
-              {/* Simulate new order */}
-              <Button variant="outline" size="sm" className="bg-transparent gap-1" onClick={simulateNewOrder}>
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Simular orden</span>
-              </Button>
+
             </div>
           </div>
         </div>
@@ -308,10 +331,14 @@ export default function KitchenPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <CardTitle className="text-lg flex items-center gap-2">
-                        Mesa {order.table}
+                        {order.table > 0 ? `Mesa ${order.table}` : "Sin mesa"}
                         <span className="text-xs font-normal text-muted-foreground">{order.section}</span>
                       </CardTitle>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-xs text-muted-foreground">{order.serviceType}</span>
+                        {order.waiter && (
+                          <span className="text-xs text-muted-foreground">· {order.waiter}</span>
+                        )}
                         {order.priority === "high" && (
                           <Badge variant="destructive" className="text-xs">Urgente</Badge>
                         )}
@@ -423,10 +450,7 @@ export default function KitchenPage() {
           <div className="text-center py-24">
             <ChefHat className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-40" />
             <h2 className="text-xl font-bold mb-1">Sin pedidos</h2>
-            <p className="text-sm text-muted-foreground mb-4">Los nuevos pedidos aparecerán aquí automáticamente</p>
-            <Button variant="outline" size="sm" className="bg-transparent gap-1" onClick={simulateNewOrder}>
-              <Plus className="w-4 h-4" />Simular primera orden
-            </Button>
+            <p className="text-sm text-muted-foreground mb-4">Los nuevos pedidos aparecen aquí en tiempo real</p>
           </div>
         )}
       </main>

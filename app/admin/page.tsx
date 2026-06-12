@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
+import {
+  getSession, clearSession, type AuthUser,
+  usuarios, categoriasMenu, platillos as platillosApi, secciones, mesas, config, auditoria,
+  type Usuario, type AuditoriaEntry, type Seccion, type ComandaAdmin,
+  type ModificadorGrupo, type ModificadorOpcion,
+} from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -53,6 +59,8 @@ import {
   FileX,
   Printer,
   AlertTriangle,
+  ScrollText,
+  Filter,
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
@@ -76,6 +84,7 @@ interface TableDef {
   number: number
   capacity: number
   section: string
+  seccionId: string
   active: boolean
   notes: string
 }
@@ -94,6 +103,7 @@ interface MenuItem {
   price: number
   description: string
   available: boolean
+  modificadores: ModificadorGrupo[]
 }
 
 interface PaymentMethod {
@@ -169,14 +179,14 @@ const seedUsers: AppUser[] = [
 ]
 
 const seedTables: TableDef[] = [
-  { id: "t1", number: 1, capacity: 2, section: "Interior", active: true, notes: "" },
-  { id: "t2", number: 2, capacity: 4, section: "Interior", active: true, notes: "" },
-  { id: "t3", number: 3, capacity: 4, section: "Interior", active: true, notes: "" },
-  { id: "t4", number: 4, capacity: 6, section: "Interior", active: true, notes: "" },
-  { id: "t5", number: 5, capacity: 2, section: "Terraza", active: true, notes: "" },
-  { id: "t6", number: 6, capacity: 4, section: "Terraza", active: true, notes: "" },
-  { id: "t7", number: 7, capacity: 8, section: "Terraza", active: true, notes: "Mesa familiar" },
-  { id: "t8", number: 8, capacity: 4, section: "Barra", active: true, notes: "" },
+  { id: "t1", number: 1, capacity: 2, section: "Interior", seccionId: "", active: true, notes: "" },
+  { id: "t2", number: 2, capacity: 4, section: "Interior", seccionId: "", active: true, notes: "" },
+  { id: "t3", number: 3, capacity: 4, section: "Interior", seccionId: "", active: true, notes: "" },
+  { id: "t4", number: 4, capacity: 6, section: "Interior", seccionId: "", active: true, notes: "" },
+  { id: "t5", number: 5, capacity: 2, section: "Terraza", seccionId: "", active: true, notes: "" },
+  { id: "t6", number: 6, capacity: 4, section: "Terraza", seccionId: "", active: true, notes: "" },
+  { id: "t7", number: 7, capacity: 8, section: "Terraza", seccionId: "", active: true, notes: "Mesa familiar" },
+  { id: "t8", number: 8, capacity: 4, section: "Barra", seccionId: "", active: true, notes: "" },
 ]
 
 const seedCategories: MenuCategory[] = [
@@ -188,16 +198,16 @@ const seedCategories: MenuCategory[] = [
 ]
 
 const seedMenuItems: MenuItem[] = [
-  { id: "mi1", categoryId: "c1", name: "Ensalada César", price: 9.99, description: "Lechuga romana, crutones, parmesano", available: true },
-  { id: "mi2", categoryId: "c1", name: "Alitas de Pollo", price: 10.99, description: "Con salsa BBQ o búfalo", available: true },
-  { id: "mi3", categoryId: "c2", name: "Hamburguesa Clásica", price: 12.99, description: "Carne de res, lechuga, jitomate, queso", available: true },
-  { id: "mi4", categoryId: "c2", name: "Pizza Margarita", price: 14.99, description: "Salsa de tomate, queso mozzarella, albahaca", available: true },
-  { id: "mi5", categoryId: "c2", name: "Pasta Carbonara", price: 13.99, description: "Pasta, tocino, huevo, parmesano", available: true },
-  { id: "mi6", categoryId: "c3", name: "Tiramisú", price: 6.99, description: "Postre italiano clásico", available: true },
-  { id: "mi7", categoryId: "c3", name: "Helado", price: 5.99, description: "3 sabores a elegir", available: true },
-  { id: "mi8", categoryId: "c4", name: "Coca Cola", price: 2.99, description: "600 ml", available: true },
-  { id: "mi9", categoryId: "c4", name: "Agua Mineral", price: 1.99, description: "500 ml", available: true },
-  { id: "mi10", categoryId: "c4", name: "Cerveza", price: 4.99, description: "355 ml", available: true },
+  { id: "mi1", categoryId: "c1", name: "Ensalada César", price: 9.99, description: "Lechuga romana, crutones, parmesano", available: true, modificadores: [] },
+  { id: "mi2", categoryId: "c1", name: "Alitas de Pollo", price: 10.99, description: "Con salsa BBQ o búfalo", available: true, modificadores: [] },
+  { id: "mi3", categoryId: "c2", name: "Hamburguesa Clásica", price: 12.99, description: "Carne de res, lechuga, jitomate, queso", available: true, modificadores: [] },
+  { id: "mi4", categoryId: "c2", name: "Pizza Margarita", price: 14.99, description: "Salsa de tomate, queso mozzarella, albahaca", available: true, modificadores: [] },
+  { id: "mi5", categoryId: "c2", name: "Pasta Carbonara", price: 13.99, description: "Pasta, tocino, huevo, parmesano", available: true, modificadores: [] },
+  { id: "mi6", categoryId: "c3", name: "Tiramisú", price: 6.99, description: "Postre italiano clásico", available: true, modificadores: [] },
+  { id: "mi7", categoryId: "c3", name: "Helado", price: 5.99, description: "3 sabores a elegir", available: true, modificadores: [] },
+  { id: "mi8", categoryId: "c4", name: "Coca Cola", price: 2.99, description: "600 ml", available: true, modificadores: [] },
+  { id: "mi9", categoryId: "c4", name: "Agua Mineral", price: 1.99, description: "500 ml", available: true, modificadores: [] },
+  { id: "mi10", categoryId: "c4", name: "Cerveza", price: 4.99, description: "355 ml", available: true, modificadores: [] },
 ]
 
 const seedPaymentMethods: PaymentMethod[] = [
@@ -254,8 +264,8 @@ const defaultBusiness: BusinessConfig = {
   email: "contacto@elsabor.mx",
   ticketHeader: "¡Gracias por su preferencia!",
   ticketFooter: "Propina no incluida. IVA incluido en precios.",
-  currency: "MXN",
-  timezone: "America/Mexico_City",
+  currency: "GTQ",
+  timezone: "America/Guatemala",
 }
 
 const defaultTax: TaxConfig = {
@@ -280,39 +290,132 @@ const ALL_MODULES: { value: AppModule; label: string }[] = [
   { value: "admin", label: "Administración" },
 ]
 
+const VALID_ROLES: { value: Usuario["rol"]; label: string }[] = [
+  { value: "admin", label: "Administrador" },
+  { value: "cajero", label: "Cajero" },
+  { value: "mesero", label: "Mesero" },
+  { value: "cocina", label: "Cocina" },
+]
+
 const TABLE_SECTIONS = ["Interior", "Terraza", "Barra", "Privado", "Jardín", "Lounge"]
 
 // ─── Blank helpers ─────────────────────────────────────────────────────────────
 const blankUser = (): Omit<AppUser, "id"> => ({ name: "", username: "", pin: "", role: "", modules: [], active: true, notes: "" })
-const blankTable = (): Omit<TableDef, "id"> => ({ number: 0, capacity: 2, section: "Interior", active: true, notes: "" })
-const blankMenuItem = (): Omit<MenuItem, "id"> => ({ categoryId: "", name: "", price: 0, description: "", available: true })
+const blankTable = (): Omit<TableDef, "id"> => ({ number: 0, capacity: 2, section: "", seccionId: "", active: true, notes: "" })
+const blankMenuItem = (): Omit<MenuItem, "id"> => ({ categoryId: "", name: "", price: 0, description: "", available: true, modificadores: [] })
 const blankCategory = (): Omit<MenuCategory, "id"> => ({ name: "", order: 99, active: true })
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const router = useRouter()
-  const [user, setUser] = useState<{ username: string; module: string } | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
 
   useEffect(() => {
-    const sessionStr = localStorage.getItem("module_session_admin")
-    if (!sessionStr) { router.push("/admin/login"); return }
-    setUser(JSON.parse(sessionStr))
+    const session = getSession("admin")
+    if (!session) { router.push("/admin/login"); return }
+    setUser(session.user)
   }, [router])
 
+  useEffect(() => {
+    if (!user) return
+
+    usuarios.getAll().then(list =>
+      setAppUsers(list.map(u => ({ id: u.id, name: u.nombre, username: u.username, pin: "", role: u.rol, modules: u.modules as AppModule[], active: u.activo, notes: "" })))
+    ).catch(() => {})
+
+    categoriasMenu.getAll("admin").then(list =>
+      setCategories(list.map(c => ({ id: c.id, name: c.nombre, order: c.orden, active: c.activa })))
+    ).catch(() => {})
+
+    platillosApi.getAll("admin").then(list =>
+      setMenuItems(list.map(p => ({
+        id: p.id, categoryId: p.categoriaId, name: p.nombre, price: p.precio,
+        description: p.descripcion ?? "", available: p.disponible,
+        modificadores: (p.modificadores || []).map(g => ({
+          ...g,
+          obligatorio: g.obligatorio ?? false,
+          minSelecciones: g.minSelecciones ?? 0,
+          maxSelecciones: g.maxSelecciones ?? 0,
+          opciones: (g.opciones || []).map(o => ({ ...o, activo: o.activo ?? true })),
+        })),
+      })))
+    ).catch(() => {})
+
+    secciones.getAll("admin").then(secs => {
+      setRawSecciones(secs)
+      const allMesas = secs.flatMap(s =>
+        s.mesas.map(m => ({ id: m.id, number: m.numero, capacity: m.capacidad, section: s.nombre, seccionId: s.id, active: true, notes: m.notas ?? "" }))
+      )
+      setTables(allMesas)
+    }).catch(() => {})
+
+    config.getMetodosPago().then(list =>
+      setPaymentMethods(list.map(m => ({ id: m.id, name: m.nombre, active: m.activo, requiresReference: m.requiereReferencia })))
+    ).catch(() => {})
+
+    config.getNegocio().then(cfg =>
+      setBusiness(prev => ({
+        ...prev,
+        name: cfg.nombre,
+        rfc: cfg.rfc ?? "",
+        address: cfg.direccion ?? "",
+        phone: cfg.telefono ?? "",
+        email: cfg.email ?? "",
+        ticketHeader: cfg.ticketHeader ?? prev.ticketHeader,
+        ticketFooter: cfg.ticketFooter ?? prev.ticketFooter,
+        currency: cfg.moneda,
+        timezone: cfg.zonaHoraria,
+      }))
+    ).catch(() => {})
+
+    config.getImpuestos().then(cfg =>
+      setTaxConfig(prev => ({
+        ...prev,
+        ivaEnabled: cfg.ivaActivo,
+        ivaRate: cfg.ivaPorcentaje,
+        ivaIncluded: cfg.preciosConIva,
+        tipEnabled: cfg.propinaActiva ?? prev.tipEnabled,
+        tipSuggested: cfg.propinaSugerida ?? prev.tipSuggested,
+        serviceChargeEnabled: cfg.cargoServicioActivo ?? prev.serviceChargeEnabled,
+        serviceChargeRate: cfg.cargoServicioPorcentaje ?? prev.serviceChargeRate,
+      }))
+    ).catch(() => {})
+
+    config.getComandas({ porPagina: 300 }).then(list => {
+      setTickets(list.map(mapComandaToTicket))
+    }).catch(() => {})
+  }, [user])
+
   const logout = () => {
-    localStorage.removeItem("module_session_admin")
+    clearSession("admin")
     router.push("/admin/login")
   }
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const [appUsers, setAppUsers] = useState<AppUser[]>(seedUsers)
-  const [tables, setTables] = useState<TableDef[]>(seedTables)
-  const [categories, setCategories] = useState<MenuCategory[]>(seedCategories)
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(seedMenuItems)
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(seedPaymentMethods)
+  const [appUsers, setAppUsers] = useState<AppUser[]>([])
+  const [tables, setTables] = useState<TableDef[]>([])
+  const [rawSecciones, setRawSecciones] = useState<Seccion[]>([])
+  const [categories, setCategories] = useState<MenuCategory[]>([])
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [business, setBusiness] = useState<BusinessConfig>(defaultBusiness)
   const [taxConfig, setTaxConfig] = useState<TaxConfig>(defaultTax)
   const [activeTab, setActiveTab] = useState("users")
+
+  // ── Auditoría ──────────────────────────────────────────────────────────────
+  const [auditEntries, setAuditEntries] = useState<AuditoriaEntry[]>([])
+  const [auditTotal, setAuditTotal] = useState(0)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [auditSearch, setAuditSearch] = useState("")
+  const [auditPage, setAuditPage] = useState(1)
+
+  const loadAudit = (page = 1, accion?: string) => {
+    setAuditLoading(true)
+    auditoria.getAll({ pagina: page, porPagina: 50, ...(accion ? { accion } : {}) })
+      .then(r => { setAuditEntries(r.datos); setAuditTotal(r.total); setAuditPage(page) })
+      .catch(() => {})
+      .finally(() => setAuditLoading(false))
+  }
 
   // ── User dialog ────────────────────────────────────────────────────────────
   const [showUserDialog, setShowUserDialog] = useState(false)
@@ -335,22 +438,32 @@ export default function AdminPage() {
   const saveUser = () => {
     if (!userForm.name.trim()) { toast({ title: "El nombre es requerido" }); return }
     if (!userForm.username.trim()) { toast({ title: "El usuario es requerido" }); return }
-    if (userForm.pin.length < 4) { toast({ title: "El PIN debe tener al menos 4 dígitos" }); return }
+    if (!userForm.role) { toast({ title: "Selecciona un rol" }); return }
+    if (!editingUser && userForm.pin.length < 4) { toast({ title: "El PIN debe tener al menos 4 dígitos" }); return }
     if (editingUser) {
-      setAppUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, ...userForm } : u))
-      toast({ title: "Usuario actualizado" })
+      const payload: { nombre: string; username: string; rol: Usuario["rol"]; modules: string[]; activo: boolean; pin?: string } = { nombre: userForm.name, username: userForm.username, rol: userForm.role as Usuario["rol"], modules: userForm.modules, activo: userForm.active }
+      if (userForm.pin.length >= 4) payload.pin = userForm.pin
+      usuarios.update(editingUser.id, payload).then(u => {
+        setAppUsers(prev => prev.map(x => x.id === editingUser.id ? { ...x, ...userForm, id: u.id } : x))
+        toast({ title: "Usuario actualizado" })
+        setShowUserDialog(false)
+      }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
     } else {
       const duplicate = appUsers.find(u => u.username === userForm.username)
       if (duplicate) { toast({ title: "El nombre de usuario ya existe" }); return }
-      setAppUsers(prev => [...prev, { id: `u-${Date.now()}`, ...userForm }])
-      toast({ title: "Usuario creado" })
+      usuarios.create({ nombre: userForm.name, username: userForm.username, pin: userForm.pin, rol: userForm.role as Usuario["rol"], modules: userForm.modules }).then(u => {
+        setAppUsers(prev => [...prev, { id: u.id, ...userForm }])
+        toast({ title: "Usuario creado" })
+        setShowUserDialog(false)
+      }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
     }
-    setShowUserDialog(false)
   }
   const deleteUser = (id: string) => {
     if (appUsers.length <= 1) { toast({ title: "Debe haber al menos un usuario" }); return }
-    setAppUsers(prev => prev.filter(u => u.id !== id))
-    toast({ title: "Usuario eliminado" })
+    usuarios.remove(id).then(() => {
+      setAppUsers(prev => prev.filter(u => u.id !== id))
+      toast({ title: "Usuario eliminado" })
+    }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
   }
 
   // ── Table dialog ───────────────────────────────────────────────────────────
@@ -359,27 +472,99 @@ export default function AdminPage() {
   const [tableForm, setTableForm] = useState(blankTable())
   const [tableViewSection, setTableViewSection] = useState<string>("all")
 
-  const openNewTable = () => { setEditingTable(null); setTableForm({ ...blankTable(), number: tables.length + 1 }); setShowTableDialog(true) }
+  const openNewTable = () => {
+    const firstSec = rawSecciones[0]
+    setEditingTable(null)
+    setTableForm({ ...blankTable(), number: tables.length + 1, section: firstSec?.nombre ?? "", seccionId: firstSec?.id ?? "" })
+    setShowTableDialog(true)
+  }
   const openEditTable = (t: TableDef) => {
     setEditingTable(t)
-    setTableForm({ number: t.number, capacity: t.capacity, section: t.section, active: t.active, notes: t.notes })
+    setTableForm({ number: t.number, capacity: t.capacity, section: t.section, seccionId: t.seccionId, active: t.active, notes: t.notes })
     setShowTableDialog(true)
   }
   const saveTable = () => {
     if (tableForm.number <= 0) { toast({ title: "El número de mesa debe ser mayor a 0" }); return }
+    if (!tableForm.seccionId) { toast({ title: "Selecciona una sección" }); return }
     const dup = tables.find(t => t.number === tableForm.number && t.id !== editingTable?.id)
     if (dup) { toast({ title: `Ya existe la mesa ${tableForm.number}` }); return }
     if (editingTable) {
-      setTables(prev => prev.map(t => t.id === editingTable.id ? { ...t, ...tableForm } : t))
-      toast({ title: "Mesa actualizada" })
+      mesas.update(editingTable.id, { numero: tableForm.number, capacidad: tableForm.capacity, seccionId: tableForm.seccionId, activa: tableForm.active })
+        .then(() => {
+          setTables(prev => prev.map(t => t.id === editingTable.id ? { ...t, ...tableForm } : t))
+          toast({ title: "Mesa actualizada" })
+          setShowTableDialog(false)
+        })
+        .catch(e => toast({ title: "Error al actualizar mesa", description: e.message ?? String(e), variant: "destructive" }))
     } else {
-      setTables(prev => [...prev, { id: `t-${Date.now()}`, ...tableForm }])
-      toast({ title: "Mesa creada" })
+      const payload = { numero: tableForm.number, capacidad: tableForm.capacity, seccionId: tableForm.seccionId, activa: tableForm.active }
+      mesas.create(payload)
+        .then(m => {
+          setTables(prev => [...prev, { id: m.id, ...tableForm }])
+          toast({ title: "Mesa creada" })
+          setShowTableDialog(false)
+        })
+        .catch(e => toast({ title: "Error al crear mesa", description: e.message ?? String(e), variant: "destructive" }))
     }
-    setShowTableDialog(false)
   }
-  const deleteTable = (id: string) => { setTables(prev => prev.filter(t => t.id !== id)); toast({ title: "Mesa eliminada" }) }
+  const deleteTable = (id: string) => {
+    mesas.remove(id)
+      .then(() => {
+        setTables(prev => prev.filter(t => t.id !== id))
+        toast({ title: "Mesa eliminada" })
+      })
+      .catch(e => toast({ title: "Error al eliminar mesa", description: e.message ?? String(e), variant: "destructive" }))
+  }
   const tableSections = Array.from(new Set(tables.map(t => t.section))).sort()
+
+  // ── Section dialog ─────────────────────────────────────────────────────────
+  const [showSeccionDialog, setShowSeccionDialog] = useState(false)
+  const [editingSeccion, setEditingSeccion] = useState<Seccion | null>(null)
+  const [seccionForm, setSeccionForm] = useState({ nombre: "", orden: 1 })
+
+  const openNewSeccion = () => {
+    setEditingSeccion(null)
+    setSeccionForm({ nombre: "", orden: rawSecciones.length + 1 })
+    setShowSeccionDialog(true)
+  }
+  const openEditSeccion = (s: Seccion) => {
+    setEditingSeccion(s)
+    setSeccionForm({ nombre: s.nombre, orden: 1 })
+    setShowSeccionDialog(true)
+  }
+  const saveSeccion = () => {
+    if (!seccionForm.nombre.trim()) { toast({ title: "El nombre es requerido" }); return }
+    if (editingSeccion) {
+      secciones.update(editingSeccion.id, { nombre: seccionForm.nombre, orden: seccionForm.orden })
+        .then(updated => {
+          setRawSecciones(prev => prev.map(s => s.id === editingSeccion.id ? { ...s, nombre: updated.nombre } : s))
+          setTables(prev => prev.map(t => t.seccionId === editingSeccion.id ? { ...t, section: updated.nombre } : t))
+          toast({ title: "Sección actualizada" })
+          setShowSeccionDialog(false)
+        })
+        .catch(e => toast({ title: "Error al actualizar sección", description: e.message ?? String(e), variant: "destructive" }))
+    } else {
+      secciones.create({ nombre: seccionForm.nombre, orden: seccionForm.orden })
+        .then(s => {
+          setRawSecciones(prev => [...prev, s])
+          toast({ title: "Sección creada" })
+          setShowSeccionDialog(false)
+        })
+        .catch(e => toast({ title: "Error al crear sección", description: e.message ?? String(e), variant: "destructive" }))
+    }
+  }
+  const deleteSeccion = (s: Seccion) => {
+    if (tables.some(t => t.seccionId === s.id)) {
+      toast({ title: "No se puede eliminar", description: `La sección "${s.nombre}" tiene mesas asignadas.`, variant: "destructive" })
+      return
+    }
+    secciones.remove(s.id)
+      .then(() => {
+        setRawSecciones(prev => prev.filter(r => r.id !== s.id))
+        toast({ title: "Sección eliminada" })
+      })
+      .catch(e => toast({ title: "Error al eliminar sección", description: e.message ?? String(e), variant: "destructive" }))
+  }
 
   // ── Menu dialogs ────────────────────────────────────────────────────────────
   const [showCategoryDialog, setShowCategoryDialog] = useState(false)
@@ -394,17 +579,25 @@ export default function AdminPage() {
   const saveCategory = () => {
     if (!categoryForm.name.trim()) { toast({ title: "El nombre es requerido" }); return }
     if (editingCategory) {
-      setCategories(prev => prev.map(c => c.id === editingCategory.id ? { ...c, ...categoryForm } : c))
-      toast({ title: "Categoría actualizada" })
+      categoriasMenu.update(editingCategory.id, { nombre: categoryForm.name, orden: categoryForm.order, activa: categoryForm.active }).then(() => {
+        setCategories(prev => prev.map(c => c.id === editingCategory.id ? { ...c, ...categoryForm } : c))
+        toast({ title: "Categoría actualizada" })
+        setShowCategoryDialog(false)
+      }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
     } else {
-      setCategories(prev => [...prev, { id: `c-${Date.now()}`, ...categoryForm }])
-      toast({ title: "Categoría creada" })
+      categoriasMenu.create({ nombre: categoryForm.name, orden: categoryForm.order, activa: categoryForm.active }).then(c => {
+        setCategories(prev => [...prev, { id: c.id, ...categoryForm }])
+        toast({ title: "Categoría creada" })
+        setShowCategoryDialog(false)
+      }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
     }
-    setShowCategoryDialog(false)
   }
   const deleteCategory = (id: string) => {
     if (menuItems.some(i => i.categoryId === id)) { toast({ title: "Primero elimina o reasigna los platillos de esta categoría" }); return }
-    setCategories(prev => prev.filter(c => c.id !== id)); toast({ title: "Categoría eliminada" })
+    categoriasMenu.remove(id).then(() => {
+      setCategories(prev => prev.filter(c => c.id !== id))
+      toast({ title: "Categoría eliminada" })
+    }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
   }
 
   const [showMenuItemDialog, setShowMenuItemDialog] = useState(false)
@@ -413,32 +606,137 @@ export default function AdminPage() {
 
   const openNewMenuItem = (catId = "") => { setEditingMenuItem(null); setMenuItemForm({ ...blankMenuItem(), categoryId: catId }); setShowMenuItemDialog(true) }
   const openEditMenuItem = (m: MenuItem) => {
-    setEditingMenuItem(m); setMenuItemForm({ categoryId: m.categoryId, name: m.name, price: m.price, description: m.description, available: m.available }); setShowMenuItemDialog(true)
+    setEditingMenuItem(m); setMenuItemForm({ categoryId: m.categoryId, name: m.name, price: m.price, description: m.description, available: m.available, modificadores: m.modificadores || [] }); setShowMenuItemDialog(true)
   }
+  const [savingMenuItem, setSavingMenuItem] = useState(false)
   const saveMenuItem = () => {
+    if (savingMenuItem) return
     if (!menuItemForm.name.trim()) { toast({ title: "El nombre es requerido" }); return }
     if (!menuItemForm.categoryId) { toast({ title: "Selecciona una categoría" }); return }
+    // Map modifiers to match backend CreateModificadorGrupoDto / CreateModificadorOpcionDto
+    const modsPayload = menuItemForm.modificadores.map((g, gi) => ({
+      grupoNombre: g.grupoNombre,
+      tipo: g.tipo,
+      obligatorio: g.obligatorio,
+      minSelecciones: g.minSelecciones,
+      maxSelecciones: g.maxSelecciones,
+      orden: gi,
+      opciones: g.opciones.map((o, oi) => ({
+        nombre: o.nombre,
+        precioDelta: o.precioDelta,
+        esDefault: o.esDefault,
+        activo: o.activo,
+        orden: oi,
+      })),
+    }))
+    const payload = { nombre: menuItemForm.name, precio: menuItemForm.price, descripcion: menuItemForm.description, categoriaId: menuItemForm.categoryId, disponible: menuItemForm.available, modificadores: modsPayload }
+    setSavingMenuItem(true)
     if (editingMenuItem) {
-      setMenuItems(prev => prev.map(m => m.id === editingMenuItem.id ? { ...m, ...menuItemForm } : m))
-      toast({ title: "Platillo actualizado" })
+      platillosApi.update(editingMenuItem.id, payload).then(() => {
+        setMenuItems(prev => prev.map(m => m.id === editingMenuItem.id ? { ...m, ...menuItemForm } : m))
+        toast({ title: "Platillo actualizado" })
+        setShowMenuItemDialog(false)
+      }).catch(e => {
+        const msg = e?.message || String(e)
+        console.error("❌ Error backend:", msg)
+        toast({ title: "Error al guardar", description: msg, variant: "destructive" })
+      }).finally(() => setSavingMenuItem(false))
     } else {
-      setMenuItems(prev => [...prev, { id: `mi-${Date.now()}`, ...menuItemForm }])
-      toast({ title: "Platillo creado" })
+      platillosApi.create(payload).then(p => {
+        setMenuItems(prev => [...prev, { id: p.id, ...menuItemForm }])
+        toast({ title: "Platillo creado" })
+        setShowMenuItemDialog(false)
+      }).catch(e => {
+        const msg = e?.message || String(e)
+        console.error("❌ Error backend:", msg)
+        toast({ title: "Error al crear", description: msg, variant: "destructive" })
+      }).finally(() => setSavingMenuItem(false))
     }
-    setShowMenuItemDialog(false)
   }
-  const deleteMenuItem = (id: string) => { setMenuItems(prev => prev.filter(m => m.id !== id)); toast({ title: "Platillo eliminado" }) }
+  const deleteMenuItem = (id: string) => {
+    platillosApi.remove(id).then(() => {
+      setMenuItems(prev => prev.filter(m => m.id !== id))
+      toast({ title: "Platillo eliminado" })
+    }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
+  }
+
+  // ── Modifier group/option helpers ───────────────────────────────────────────
+  const addModGroup = () => {
+    setMenuItemForm(p => ({
+      ...p,
+      modificadores: [...p.modificadores, {
+        grupoId: crypto.randomUUID(), grupoNombre: "", tipo: "single" as const,
+        obligatorio: false, minSelecciones: 0, maxSelecciones: 0, opciones: [],
+      }],
+    }))
+  }
+  const updateModGroup = (gi: number, field: string, value: unknown) => {
+    setMenuItemForm(p => ({
+      ...p,
+      modificadores: p.modificadores.map((g, i) => i === gi ? { ...g, [field]: value } : g),
+    }))
+  }
+  const removeModGroup = (gi: number) => {
+    setMenuItemForm(p => ({ ...p, modificadores: p.modificadores.filter((_, i) => i !== gi) }))
+  }
+  const addModOption = (gi: number) => {
+    setMenuItemForm(p => ({
+      ...p,
+      modificadores: p.modificadores.map((g, i) => i === gi ? {
+        ...g, opciones: [...g.opciones, { id: crypto.randomUUID(), nombre: "", precioDelta: 0, esDefault: false, activo: true }],
+      } : g),
+    }))
+  }
+  const updateModOption = (gi: number, oi: number, field: string, value: unknown) => {
+    setMenuItemForm(p => ({
+      ...p,
+      modificadores: p.modificadores.map((g, i) => i === gi ? {
+        ...g, opciones: g.opciones.map((o, j) => j === oi ? { ...o, [field]: value } : o),
+      } : g),
+    }))
+  }
+  const removeModOption = (gi: number, oi: number) => {
+    setMenuItemForm(p => ({
+      ...p,
+      modificadores: p.modificadores.map((g, i) => i === gi ? {
+        ...g, opciones: g.opciones.filter((_, j) => j !== oi),
+      } : g),
+    }))
+  }
 
   // ── Payment methods ─────────────────────────────────────────────────────────
+  const reloadPaymentMethods = () => {
+    config.getMetodosPago().then(list =>
+      setPaymentMethods(list.map(m => ({ id: m.id, name: m.nombre, active: m.activo, requiresReference: m.requiereReferencia })))
+    ).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
+  }
+
   const updatePaymentMethod = (id: string, field: keyof PaymentMethod, value: boolean | string) => {
+    const next = paymentMethods.find(pm => pm.id === id)
+    if (!next) return
+    const payload = {
+      nombre: field === "name" ? String(value) : next.name,
+      activo: field === "active" ? Boolean(value) : next.active,
+      requiereReferencia: field === "requiresReference" ? Boolean(value) : next.requiresReference,
+    }
     setPaymentMethods(prev => prev.map(pm => pm.id === id ? { ...pm, [field]: value } : pm))
+    config.updateMetodoPago(id, payload)
+      .then(() => reloadPaymentMethods())
+      .catch(e => toast({ title: "Error al guardar método de pago", description: String(e), variant: "destructive" }))
   }
   const addPaymentMethod = () => {
-    setPaymentMethods(prev => [...prev, { id: `pm-${Date.now()}`, name: "Nuevo método", active: true, requiresReference: false }])
+    config.createMetodoPago({ nombre: "Nuevo método", activo: true, requiereReferencia: false })
+      .then(() => reloadPaymentMethods())
+      .catch(e => toast({ title: "Error al crear método de pago", description: String(e), variant: "destructive" }))
+  }
+  const deletePaymentMethod = (id: string) => {
+    config.deleteMetodoPago(id)
+      .then(() => reloadPaymentMethods())
+      .catch(e => toast({ title: "Error al eliminar método de pago", description: String(e), variant: "destructive" }))
   }
 
   // ── Comandas ────────────────────────────────────────────────────────────────
-  const [tickets, setTickets] = useState<SaleTicket[]>(seedAdminTickets)
+  const [tickets, setTickets] = useState<SaleTicket[]>([])
   const [cmdSearch, setCmdSearch] = useState("")
   const [cmdWaiter, setCmdWaiter] = useState("all")
   const [cmdMethod, setCmdMethod] = useState("all")
@@ -461,7 +759,7 @@ export default function AdminPage() {
   const [showDeletePinDialog, setShowDeletePinDialog] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
   const [deletePinInput, setDeletePinInput] = useState("")
-  const SUPERVISOR_PIN = "0000"
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   // ── Comandas computed ────────────────────────────────────────────────────────
   const allTicketWaiters = useMemo(() => Array.from(new Set(tickets.map(t => t.waiter))).sort(), [tickets])
@@ -488,6 +786,45 @@ export default function AdminPage() {
 
   const editTicketPreview = useMemo(() => recalcTicket(ticketEditItems, ticketEditDiscount, ticketEditTip), [ticketEditItems, ticketEditDiscount, ticketEditTip])
 
+  const toTicketMethod = (value?: string): TicketPaymentMethod => {
+    const v = (value || "").toLowerCase()
+    if (v.includes("crédito") || v.includes("credito")) return "Tarjeta Crédito"
+    if (v.includes("débito") || v.includes("debito")) return "Tarjeta Débito"
+    if (v.includes("transfer")) return "Transferencia"
+    return "Efectivo"
+  }
+
+  const mapComandaToTicket = (c: ComandaAdmin): SaleTicket => ({
+    id: c.id,
+    date: c.fecha,
+    tableNumber: c.mesaNumero ?? 0,
+    waiter: c.meseroNombre || "-",
+    cashier: c.cajeroNombre || "-",
+    items: (c.items || []).map((i) => ({
+      id: i.id,
+      name: i.nombre,
+      category: i.categoria || "Sin categoría",
+      qty: i.cantidad,
+      unitPrice: i.precioUnitario,
+    })),
+    subtotal: c.subtotal,
+    tax: c.impuesto,
+    discount: c.descuento,
+    tip: c.propina,
+    tipMethod: toTicketMethod(c.metodoPago),
+    total: c.total,
+    paymentMethod: toTicketMethod(c.metodoPago),
+    guestCount: 1,
+    notes: c.notas || "",
+    voided: c.anulada,
+  })
+
+  const reloadComandas = () => {
+    config.getComandas({ porPagina: 300 }).then(list => {
+      setTickets(list.map(mapComandaToTicket))
+    }).catch(() => {})
+  }
+
   const openEditTicket = (t: SaleTicket) => {
     setEditingTicket(t)
     setTicketEditItems(t.items.map(i => ({ ...i })))
@@ -504,14 +841,27 @@ export default function AdminPage() {
   const saveEditTicket = () => {
     if (!editingTicket) return
     if (ticketEditItems.length === 0) { toast({ title: "La comanda debe tener al menos un ítem" }); return }
-    const recalc = recalcTicket(ticketEditItems, ticketEditDiscount, ticketEditTip)
-    setTickets(prev => prev.map(t => t.id === editingTicket.id ? {
-      ...t, items: ticketEditItems, paymentMethod: ticketEditPayMethod,
-      tip: ticketEditTip, tipMethod: ticketEditTipMethod,
-      discount: ticketEditDiscount, notes: ticketEditNotes, ...recalc,
-    } : t))
-    toast({ title: "Comanda actualizada", description: editingTicket.id })
-    setShowEditTicketDialog(false)
+    const originalItems = JSON.stringify(editingTicket.items.map(i => ({ id: i.id, qty: i.qty, unitPrice: i.unitPrice })))
+    const editedItems = JSON.stringify(ticketEditItems.map(i => ({ id: i.id, qty: i.qty, unitPrice: i.unitPrice })))
+    const itemsChanged = originalItems !== editedItems
+    const paymentChanged = editingTicket.paymentMethod !== ticketEditPayMethod
+
+    if (itemsChanged || paymentChanged) {
+      toast({
+        title: "Guardado parcial",
+        description: "Por ahora backend solo actualiza descuento, propina y notas en comandas.",
+      })
+    }
+
+    config.updateComanda(editingTicket.id, {
+      descuento: ticketEditDiscount,
+      propina: ticketEditTip,
+      notas: ticketEditNotes,
+    }).then(() => {
+      toast({ title: "Comanda actualizada", description: editingTicket.id })
+      setShowEditTicketDialog(false)
+      reloadComandas()
+    }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
   }
 
   const addItemToEdit = () => {
@@ -529,16 +879,29 @@ export default function AdminPage() {
 
   const confirmDeleteTicket = (id: string) => { setDeleteTargetId(id); setDeletePinInput(""); setShowDeletePinDialog(true) }
   const voidTicket = (id: string) => {
-    setTickets(prev => prev.map(t => t.id === id ? { ...t, voided: true } : t))
-    toast({ title: "Comanda anulada" })
+    config.anularComanda(id, "Anulada desde administración")
+      .then(() => {
+        toast({ title: "Comanda anulada" })
+        reloadComandas()
+      })
+      .catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
   }
 
   const doDeleteTicket = () => {
-    if (deletePinInput !== SUPERVISOR_PIN) { toast({ title: "PIN incorrecto", variant: "destructive" }); return }
-    setTickets(prev => prev.filter(t => t.id !== deleteTargetId))
-    toast({ title: "Comanda eliminada permanentemente", description: deleteTargetId ?? "" })
-    setShowDeletePinDialog(false)
-    setDeleteTargetId(null)
+    if (!deletePinInput || deletePinInput.length < 4) { toast({ title: "Ingresa un PIN válido", variant: "destructive" }); return }
+    setDeleteLoading(true)
+    config.verificarPin(deletePinInput, "admin").then(res => {
+      if (!res.ok) { toast({ title: "PIN incorrecto o sin permisos", variant: "destructive" }); return }
+      if (!deleteTargetId) return
+      config.deleteComanda(deleteTargetId).then(() => {
+        toast({ title: "Comanda eliminada permanentemente", description: deleteTargetId })
+        setShowDeletePinDialog(false)
+        setDeleteTargetId(null)
+        reloadComandas()
+      }).catch(e => toast({ title: "Error al eliminar comanda", description: String(e), variant: "destructive" }))
+    }).catch(e => {
+      toast({ title: "PIN incorrecto", description: String(e), variant: "destructive" })
+    }).finally(() => setDeleteLoading(false))
   }
 
   const toDateTimeStr = (iso: string) => new Date(iso).toLocaleString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
@@ -570,7 +933,7 @@ export default function AdminPage() {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-7 mb-6">
+          <TabsList className="grid w-full grid-cols-8 mb-6">
             <TabsTrigger value="users"><Users className="w-4 h-4 mr-1 hidden sm:inline" />Usuarios</TabsTrigger>
             <TabsTrigger value="tables"><LayoutGrid className="w-4 h-4 mr-1 hidden sm:inline" />Mesas</TabsTrigger>
             <TabsTrigger value="menu"><UtensilsCrossed className="w-4 h-4 mr-1 hidden sm:inline" />Menú</TabsTrigger>
@@ -578,6 +941,7 @@ export default function AdminPage() {
             <TabsTrigger value="taxes"><Percent className="w-4 h-4 mr-1 hidden sm:inline" />Impuestos</TabsTrigger>
             <TabsTrigger value="business"><Settings className="w-4 h-4 mr-1 hidden sm:inline" />Negocio</TabsTrigger>
             <TabsTrigger value="comandas"><Receipt className="w-4 h-4 mr-1 hidden sm:inline" />Comandas</TabsTrigger>
+            <TabsTrigger value="audit" onClick={() => loadAudit()}><ScrollText className="w-4 h-4 mr-1 hidden sm:inline" />Auditoría</TabsTrigger>
           </TabsList>
 
           {/* ══ USUARIOS ══ */}
@@ -605,7 +969,7 @@ export default function AdminPage() {
                             {!u.active && <Badge variant="outline" className="text-xs">Inactivo</Badge>}
                           </div>
                           <div className="text-xs text-muted-foreground mb-1.5">
-                            {u.role} · PIN: {"•".repeat(u.pin.length)}
+                            {VALID_ROLES.find(r => r.value === u.role)?.label ?? u.role} · PIN: ••••
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {u.modules.map(mod => {
@@ -629,6 +993,33 @@ export default function AdminPage() {
 
           {/* ══ MESAS ══ */}
           <TabsContent value="tables" className="space-y-4">
+            {/* Secciones */}
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold">Secciones del salón</h2>
+                <p className="text-xs text-muted-foreground">{rawSecciones.length} secciones</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={openNewSeccion}><Plus className="w-4 h-4 mr-1" />Nueva sección</Button>
+            </div>
+            {rawSecciones.length === 0 && (
+              <div className="rounded-lg border border-dashed p-6 text-center">
+                <p className="text-sm text-muted-foreground">No hay secciones. Crea una sección primero para poder agregar mesas.</p>
+              </div>
+            )}
+            {rawSecciones.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {rawSecciones.map(s => (
+                  <div key={s.id} className="flex items-center gap-1 rounded-full border px-3 py-1 text-sm">
+                    <span className="font-medium">{s.nombre}</span>
+                    <span className="text-muted-foreground text-xs ml-1">({tables.filter(t => t.seccionId === s.id).length} mesas)</span>
+                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0 ml-1" onClick={() => openEditSeccion(s)}><Pencil className="w-3 h-3" /></Button>
+                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0 text-destructive" onClick={() => deleteSeccion(s)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Separator />
+            {/* Mesas */}
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold">Mesas y salón</h2>
@@ -725,14 +1116,19 @@ export default function AdminPage() {
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-medium">{item.name}</span>
                                 {!item.available && <Badge variant="outline" className="text-xs">No disponible</Badge>}
+                                {item.modificadores?.length > 0 && <Badge variant="secondary" className="text-[10px]">{item.modificadores.length} mod</Badge>}
                               </div>
                               {item.description && <div className="text-xs text-muted-foreground">{item.description}</div>}
                             </div>
                             <div className="flex items-center gap-3 ml-4">
-                              <span className="font-semibold text-sm text-primary">${item.price.toFixed(2)}</span>
+                              <span className="font-semibold text-sm text-primary">Q{item.price.toFixed(2)}</span>
                               <Switch
                                 checked={item.available}
-                                onCheckedChange={v => setMenuItems(prev => prev.map(m => m.id === item.id ? { ...m, available: v } : m))}
+                                onCheckedChange={v => {
+                                  platillosApi.setDisponible(item.id, v).then(() => {
+                                    setMenuItems(prev => prev.map(m => m.id === item.id ? { ...m, available: v } : m))
+                                  }).catch(e => toast({ title: "Error al cambiar disponibilidad", description: String(e), variant: "destructive" }))
+                                }}
                               />
                               <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEditMenuItem(item)}><Pencil className="w-3 h-3" /></Button>
                               <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteMenuItem(item.id)}><Trash2 className="w-3 h-3" /></Button>
@@ -767,7 +1163,8 @@ export default function AdminPage() {
                       <div className="flex-1 min-w-0">
                         <Input
                           value={pm.name}
-                          onChange={e => updatePaymentMethod(pm.id, "name", e.target.value)}
+                          onChange={e => setPaymentMethods(prev => prev.map(x => x.id === pm.id ? { ...x, name: e.target.value } : x))}
+                          onBlur={() => updatePaymentMethod(pm.id, "name", pm.name)}
                           className="h-7 text-sm border-0 bg-transparent p-0 font-semibold focus-visible:ring-0 focus-visible:border-b focus-visible:border-primary rounded-none"
                         />
                         <div className="flex items-center gap-3 mt-1">
@@ -781,7 +1178,18 @@ export default function AdminPage() {
                           </label>
                         </div>
                       </div>
-                      <Switch checked={pm.active} onCheckedChange={v => updatePaymentMethod(pm.id, "active", v)} />
+                      <div className="flex items-center gap-2">
+                        <Switch checked={pm.active} onCheckedChange={v => updatePaymentMethod(pm.id, "active", v)} />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-destructive"
+                          onClick={() => deletePaymentMethod(pm.id)}
+                          title="Eliminar método"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -927,7 +1335,19 @@ export default function AdminPage() {
               </CardContent>
             </Card>
 
-            <Button onClick={() => toast({ title: "Configuración guardada" })} className="w-full">
+            <Button onClick={() => {
+              config.updateImpuestos({
+                ivaActivo: taxConfig.ivaEnabled,
+                ivaPorcentaje: taxConfig.ivaRate,
+                preciosConIva: taxConfig.ivaIncluded,
+                propinaActiva: taxConfig.tipEnabled,
+                propinaSugerida: taxConfig.tipSuggested,
+                cargoServicioActivo: taxConfig.serviceChargeEnabled,
+                cargoServicioPorcentaje: taxConfig.serviceChargeRate,
+              })
+                .then(() => toast({ title: "Configuración de impuestos guardada" }))
+                .catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
+            }} className="w-full">
               Guardar configuración
             </Button>
           </TabsContent>
@@ -992,6 +1412,7 @@ export default function AdminPage() {
                     <Select value={business.currency} onValueChange={v => setBusiness(p => ({ ...p, currency: v }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="GTQ">GTQ – Quetzal Guatemalteco</SelectItem>
                         <SelectItem value="MXN">MXN – Peso Mexicano</SelectItem>
                         <SelectItem value="USD">USD – Dólar Americano</SelectItem>
                         <SelectItem value="EUR">EUR – Euro</SelectItem>
@@ -1003,6 +1424,7 @@ export default function AdminPage() {
                     <Select value={business.timezone} onValueChange={v => setBusiness(p => ({ ...p, timezone: v }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="America/Guatemala">Guatemala</SelectItem>
                         <SelectItem value="America/Mexico_City">Ciudad de México</SelectItem>
                         <SelectItem value="America/Cancun">Cancún</SelectItem>
                         <SelectItem value="America/Monterrey">Monterrey</SelectItem>
@@ -1014,7 +1436,21 @@ export default function AdminPage() {
               </CardContent>
             </Card>
 
-            <Button onClick={() => toast({ title: "Configuración guardada" })} className="w-full">
+            <Button onClick={() => {
+              config.updateNegocio({
+                nombre: business.name,
+                rfc: business.rfc || null,
+                direccion: business.address || null,
+                telefono: business.phone || null,
+                email: business.email || null,
+                ticketHeader: business.ticketHeader || null,
+                ticketFooter: business.ticketFooter || null,
+                moneda: business.currency,
+                zonaHoraria: business.timezone,
+              })
+                .then(() => toast({ title: "Datos del negocio guardados" }))
+                .catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
+            }} className="w-full">
               Guardar configuración
             </Button>
           </TabsContent>
@@ -1051,7 +1487,7 @@ export default function AdminPage() {
                 <Label htmlFor="sw-voided" className="text-xs cursor-pointer">Anuladas</Label>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">{filteredTickets.length} resultado(s) · Total: ${filteredTickets.filter(t => !t.voided).reduce((s,t) => s + t.total, 0).toFixed(2)}</p>
+            <p className="text-xs text-muted-foreground">{filteredTickets.length} resultado(s) · Total: Q{filteredTickets.filter(t => !t.voided).reduce((s,t) => s + t.total, 0).toFixed(2)}</p>
 
             <ScrollArea className="max-h-[65vh]">
               <div className="space-y-2 pr-1">
@@ -1082,13 +1518,13 @@ export default function AdminPage() {
                               </div>
                               <div className="text-xs text-muted-foreground">
                                 {toDateTimeStr(t.date)} · {t.items.reduce((s,i) => s+i.qty,0)} art.
-                                {t.tip > 0 && <span className="text-yellow-500 ml-1">· Prop: ${t.tip.toFixed(2)}</span>}
-                                {t.discount > 0 && <span className="text-destructive ml-1">· Desc: -${t.discount.toFixed(2)}</span>}
+                                {t.tip > 0 && <span className="text-yellow-500 ml-1">· Prop: Q{t.tip.toFixed(2)}</span>}
+                                {t.discount > 0 && <span className="text-destructive ml-1">· Desc: -Q{t.discount.toFixed(2)}</span>}
                                 {t.notes && <span className="ml-1 italic">· {t.notes}</span>}
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-base font-bold text-primary">${t.total.toFixed(2)}</span>
+                              <span className="text-base font-bold text-primary">Q{t.total.toFixed(2)}</span>
                               {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                             </div>
                           </div>
@@ -1100,17 +1536,17 @@ export default function AdminPage() {
                                 {t.items.map((item, idx) => (
                                   <div key={idx} className="flex justify-between text-sm">
                                     <span className="text-muted-foreground">{item.qty}× {item.name}</span>
-                                    <span>${(item.unitPrice * item.qty).toFixed(2)}</span>
+                                    <span>Q{(item.unitPrice * item.qty).toFixed(2)}</span>
                                   </div>
                                 ))}
                               </div>
                               <Separator className="mb-2" />
                               <div className="grid grid-cols-2 gap-x-4 text-xs text-muted-foreground mb-3">
-                                <span>Subtotal: ${t.subtotal.toFixed(2)}</span>
-                                <span>IVA: ${t.tax.toFixed(2)}</span>
-                                {t.discount > 0 && <span className="text-destructive">Descuento: -${t.discount.toFixed(2)}</span>}
-                                {t.tip > 0 && <span className="text-yellow-500">Propina ({t.tipMethod}): ${t.tip.toFixed(2)}</span>}
-                                <span className="font-semibold text-foreground col-span-2">Total: ${t.total.toFixed(2)}</span>
+                                <span>Subtotal: Q{t.subtotal.toFixed(2)}</span>
+                                <span>IVA: Q{t.tax.toFixed(2)}</span>
+                                {t.discount > 0 && <span className="text-destructive">Descuento: -Q{t.discount.toFixed(2)}</span>}
+                                {t.tip > 0 && <span className="text-yellow-500">Propina ({t.tipMethod}): Q{t.tip.toFixed(2)}</span>}
+                                <span className="font-semibold text-foreground col-span-2">Total: Q{t.total.toFixed(2)}</span>
                               </div>
                               {/* Actions */}
                               {!t.voided && (
@@ -1124,7 +1560,12 @@ export default function AdminPage() {
                                     <FileX className="w-3 h-3" />Anular
                                   </Button>
                                   <Button size="sm" variant="outline" className="h-7 bg-transparent text-xs gap-1"
-                                    onClick={e => { e.stopPropagation(); toast({ title: "Reimprimiendo", description: t.id }) }}>
+                                    onClick={e => {
+                                      e.stopPropagation()
+                                      config.getComandaTicket(t.id)
+                                        .then(() => toast({ title: "Ticket listo para reimpresión", description: t.id }))
+                                        .catch(err => toast({ title: "Error al obtener ticket", description: String(err), variant: "destructive" }))
+                                    }}>
                                     <Printer className="w-3 h-3" />Reimprimir
                                   </Button>
                                   <Button size="sm" variant="destructive" className="h-7 text-xs gap-1 ml-auto"
@@ -1154,6 +1595,80 @@ export default function AdminPage() {
                 }
               </div>
             </ScrollArea>
+          </TabsContent>
+
+          {/* ══ AUDITORÍA ══ */}
+          <TabsContent value="audit" className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold">Registro de auditoría</h2>
+                <p className="text-xs text-muted-foreground">{auditTotal} registros en total</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input
+                    className="pl-7 h-8 w-40"
+                    placeholder="Filtrar acción..."
+                    value={auditSearch}
+                    onChange={e => setAuditSearch(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") loadAudit(1, auditSearch || undefined) }}
+                  />
+                </div>
+                <Button size="sm" variant="outline" onClick={() => loadAudit(1, auditSearch || undefined)}>
+                  <Filter className="w-3.5 h-3.5 mr-1" />Filtrar
+                </Button>
+                <Button size="sm" onClick={() => { setAuditSearch(""); loadAudit(1) }}>
+                  <ScrollText className="w-3.5 h-3.5 mr-1" />Recargar
+                </Button>
+              </div>
+            </div>
+            {auditLoading ? (
+              <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Cargando registros...</div>
+            ) : auditEntries.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                <ScrollText className="w-10 h-10 mb-2 opacity-30" />
+                <p className="text-sm">Sin registros. Haz clic en "Recargar" para cargar el historial.</p>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50 text-muted-foreground">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium">Fecha</th>
+                      <th className="text-left px-3 py-2 font-medium">Usuario</th>
+                      <th className="text-left px-3 py-2 font-medium">Acción</th>
+                      <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Descripción</th>
+                      <th className="text-left px-3 py-2 font-medium hidden md:table-cell">IP</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {auditEntries.map(e => (
+                      <tr key={e.id} className="hover:bg-muted/30">
+                        <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                          {new Date(e.creadoEn).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}
+                        </td>
+                        <td className="px-3 py-2 font-medium">{e.usuarioNombre}</td>
+                        <td className="px-3 py-2">
+                          <Badge variant="outline" className="text-xs font-mono">{e.accion}</Badge>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell max-w-xs truncate">{e.descripcion}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell font-mono">{e.ip ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {auditTotal > 50 && (
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <span>Página {auditPage} · {Math.ceil(auditTotal / 50)} total</span>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" disabled={auditPage <= 1} onClick={() => loadAudit(auditPage - 1, auditSearch || undefined)}>Anterior</Button>
+                  <Button size="sm" variant="outline" disabled={auditPage >= Math.ceil(auditTotal / 50)} onClick={() => loadAudit(auditPage + 1, auditSearch || undefined)}>Siguiente</Button>
+                </div>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>
@@ -1203,8 +1718,13 @@ export default function AdminPage() {
                 </div>
               </div>
               <div className="space-y-1">
-                <Label>Rol / Puesto</Label>
-                <Input value={userForm.role} onChange={e => setUserForm(p => ({ ...p, role: e.target.value }))} placeholder="Cajero, Mesero, Cocinero..." />
+                <Label>Rol / Puesto *</Label>
+                <Select value={userForm.role} onValueChange={v => setUserForm(p => ({ ...p, role: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar rol" /></SelectTrigger>
+                  <SelectContent>
+                    {VALID_ROLES.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="space-y-2">
@@ -1237,6 +1757,30 @@ export default function AdminPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Seccion */}
+      <Dialog open={showSeccionDialog} onOpenChange={setShowSeccionDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{editingSeccion ? `Editar sección` : "Nueva sección"}</DialogTitle>
+            <DialogDescription>Las secciones agrupan las mesas del salón (ej: Interior, Terraza, Bar).</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>Nombre *</Label>
+              <Input value={seccionForm.nombre} onChange={e => setSeccionForm(p => ({ ...p, nombre: e.target.value }))} placeholder="Ej: Interior, Terraza, Bar..." />
+            </div>
+            <div className="space-y-1">
+              <Label>Orden de aparición</Label>
+              <Input type="number" min="1" value={seccionForm.orden} onChange={e => setSeccionForm(p => ({ ...p, orden: Number(e.target.value) }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSeccionDialog(false)}>Cancelar</Button>
+            <Button onClick={saveSeccion}>Guardar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Table */}
       <Dialog open={showTableDialog} onOpenChange={setShowTableDialog}>
         <DialogContent className="max-w-sm">
@@ -1257,10 +1801,17 @@ export default function AdminPage() {
             </div>
             <div className="space-y-1">
               <Label>Área / Sector</Label>
-              <Select value={tableForm.section} onValueChange={v => setTableForm(p => ({ ...p, section: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={tableForm.seccionId}
+                onValueChange={v => {
+                  const sec = rawSecciones.find(s => s.id === v)
+                  setTableForm(p => ({ ...p, seccionId: v, section: sec?.nombre ?? v }))
+                }}
+                disabled={rawSecciones.length === 0}
+              >
+                <SelectTrigger><SelectValue placeholder={rawSecciones.length === 0 ? "Cargando secciones..." : "Selecciona sección"} /></SelectTrigger>
                 <SelectContent>
-                  {TABLE_SECTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  {rawSecciones.map(s => <SelectItem key={s.id} value={s.id}>{s.nombre}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -1325,7 +1876,7 @@ export default function AdminPage() {
                     <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-muted/40">
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium truncate">{item.name}</div>
-                        <div className="text-xs text-muted-foreground">${item.unitPrice.toFixed(2)} c/u · {item.category}</div>
+                        <div className="text-xs text-muted-foreground">Q{item.unitPrice.toFixed(2)} c/u · {item.category}</div>
                       </div>
                       <div className="flex items-center gap-1">
                         <Button size="icon" variant="outline" className="h-6 w-6 bg-transparent"
@@ -1338,7 +1889,7 @@ export default function AdminPage() {
                           <span className="text-xs font-bold">+</span>
                         </Button>
                       </div>
-                      <div className="text-sm font-semibold w-14 text-right">${(item.unitPrice * item.qty).toFixed(2)}</div>
+                      <div className="text-sm font-semibold w-14 text-right">Q{(item.unitPrice * item.qty).toFixed(2)}</div>
                       <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive"
                         onClick={() => setTicketEditItems(prev => prev.filter((_,j) => j !== idx))}>
                         <Trash2 className="w-3 h-3" />
@@ -1359,7 +1910,7 @@ export default function AdminPage() {
                         <div key={cat.id}>
                           <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase">{cat.name}</div>
                           {menuItems.filter(mi => mi.categoryId === cat.id && mi.available).map(mi => (
-                            <SelectItem key={mi.id} value={mi.id}>{mi.name} — ${mi.price.toFixed(2)}</SelectItem>
+                            <SelectItem key={mi.id} value={mi.id}>{mi.name} — Q{mi.price.toFixed(2)}</SelectItem>
                           ))}
                         </div>
                       ))}
@@ -1413,12 +1964,12 @@ export default function AdminPage() {
 
               {/* Live preview */}
               <div className="rounded-lg bg-muted/50 p-3 text-sm space-y-1">
-                <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span>${editTicketPreview.subtotal.toFixed(2)}</span></div>
-                {ticketEditDiscount > 0 && <div className="flex justify-between text-destructive"><span>Descuento</span><span>-${ticketEditDiscount.toFixed(2)}</span></div>}
-                <div className="flex justify-between text-muted-foreground"><span>IVA (16%)</span><span>${editTicketPreview.tax.toFixed(2)}</span></div>
-                {ticketEditTip > 0 && <div className="flex justify-between text-yellow-500"><span>Propina</span><span>${ticketEditTip.toFixed(2)}</span></div>}
+                <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span>Q{editTicketPreview.subtotal.toFixed(2)}</span></div>
+                {ticketEditDiscount > 0 && <div className="flex justify-between text-destructive"><span>Descuento</span><span>-Q{ticketEditDiscount.toFixed(2)}</span></div>}
+                <div className="flex justify-between text-muted-foreground"><span>IVA (16%)</span><span>Q{editTicketPreview.tax.toFixed(2)}</span></div>
+                {ticketEditTip > 0 && <div className="flex justify-between text-yellow-500"><span>Propina</span><span>Q{ticketEditTip.toFixed(2)}</span></div>}
                 <Separator />
-                <div className="flex justify-between font-bold text-primary"><span>Total</span><span>${editTicketPreview.total.toFixed(2)}</span></div>
+                <div className="flex justify-between font-bold text-primary"><span>Total</span><span>Q{editTicketPreview.total.toFixed(2)}</span></div>
               </div>
             </div>
           </ScrollArea>
@@ -1448,15 +1999,15 @@ export default function AdminPage() {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeletePinDialog(false)}>Cancelar</Button>
-            <Button variant="destructive" onClick={doDeleteTicket}><Trash2 className="w-4 h-4 mr-1" />Eliminar</Button>
+            <Button variant="outline" onClick={() => setShowDeletePinDialog(false)} disabled={deleteLoading}>Cancelar</Button>
+            <Button variant="destructive" onClick={doDeleteTicket} disabled={deleteLoading}><Trash2 className="w-4 h-4 mr-1" />{deleteLoading ? "Verificando..." : "Eliminar"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Menu item */}
       <Dialog open={showMenuItemDialog} onOpenChange={setShowMenuItemDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingMenuItem ? "Editar platillo" : "Nuevo platillo"}</DialogTitle>
             <DialogDescription>{editingMenuItem ? `Modificando: ${editingMenuItem.name}` : "Agrega un platillo al menú del POS."}</DialogDescription>
@@ -1477,7 +2028,7 @@ export default function AdminPage() {
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Precio ($)</Label>
+                <Label>Precio (Q)</Label>
                 <Input type="number" step="0.01" min="0" value={menuItemForm.price} onChange={e => setMenuItemForm(p => ({ ...p, price: Number(e.target.value) }))} />
               </div>
             </div>
@@ -1489,10 +2040,95 @@ export default function AdminPage() {
               <Switch checked={menuItemForm.available} onCheckedChange={v => setMenuItemForm(p => ({ ...p, available: v }))} />
               <Label>Disponible en el POS</Label>
             </div>
+
+            {/* ── Modifier Groups ─────────────────────────────────────── */}
+            <Separator />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-semibold">Grupos de Modificadores</Label>
+                <Button variant="outline" size="sm" type="button" onClick={addModGroup}><Plus className="w-4 h-4 mr-1" />Grupo</Button>
+              </div>
+              {menuItemForm.modificadores.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">Sin modificadores. Agrega un grupo para configurar acompañamientos, extras, etc.</p>
+              )}
+              {menuItemForm.modificadores.map((group, gi) => (
+                <Card key={group.grupoId} className="border-border">
+                  <CardContent className="p-3 space-y-3">
+                    {/* Group header */}
+                    <div className="flex items-center gap-2">
+                      <Input value={group.grupoNombre} className="flex-1"
+                        onChange={e => updateModGroup(gi, "grupoNombre", e.target.value)}
+                        placeholder="Nombre del grupo (ej: Acompañamiento, Extras)" />
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive shrink-0"
+                        onClick={() => removeModGroup(gi)}><Trash2 className="w-4 h-4" /></Button>
+                    </div>
+                    {/* Group config */}
+                    <div className="grid grid-cols-4 gap-2 items-end">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Tipo</Label>
+                        <Select value={group.tipo} onValueChange={v => updateModGroup(gi, "tipo", v)}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="single">Única (radio)</SelectItem>
+                            <SelectItem value="multiple">Múltiple (checkbox)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-1.5 pb-1">
+                        <Checkbox checked={group.obligatorio}
+                          onCheckedChange={v => updateModGroup(gi, "obligatorio", !!v)} id={`req-${gi}`} />
+                        <Label htmlFor={`req-${gi}`} className="text-xs cursor-pointer">Obligatorio</Label>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Mín selección</Label>
+                        <Input type="number" min="0" className="h-8 text-xs" value={group.minSelecciones}
+                          onChange={e => updateModGroup(gi, "minSelecciones", Number(e.target.value))} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Máx selección</Label>
+                        <Input type="number" min="0" className="h-8 text-xs" value={group.maxSelecciones}
+                          onChange={e => updateModGroup(gi, "maxSelecciones", Number(e.target.value))} />
+                      </div>
+                    </div>
+                    {/* Options */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs text-muted-foreground">Opciones</Label>
+                        <Button variant="ghost" size="sm" className="h-6 text-xs" type="button"
+                          onClick={() => addModOption(gi)}><Plus className="w-3 h-3 mr-1" />Opción</Button>
+                      </div>
+                      {group.opciones.length === 0 && (
+                        <p className="text-xs text-muted-foreground italic pl-1">Sin opciones aún</p>
+                      )}
+                      {group.opciones.map((opt, oi) => (
+                        <div key={opt.id} className="flex items-center gap-1.5">
+                          <Input value={opt.nombre} className="h-7 text-xs flex-1"
+                            onChange={e => updateModOption(gi, oi, "nombre", e.target.value)}
+                            placeholder="Nombre (ej: Arroz, Puré)" />
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <span className="text-xs text-muted-foreground">+Q</span>
+                            <Input type="number" step="0.01" min="0" value={opt.precioDelta}
+                              className="h-7 text-xs w-16"
+                              onChange={e => updateModOption(gi, oi, "precioDelta", Number(e.target.value))} />
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0" title="Activo">
+                            <Checkbox checked={opt.activo}
+                              onCheckedChange={v => updateModOption(gi, oi, "activo", !!v)} />
+                            <span className="text-[10px] text-muted-foreground">Act</span>
+                          </div>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0"
+                            onClick={() => removeModOption(gi, oi)}><Trash2 className="w-3 h-3" /></Button>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowMenuItemDialog(false)}>Cancelar</Button>
-            <Button onClick={saveMenuItem}>Guardar</Button>
+            <Button onClick={saveMenuItem} disabled={savingMenuItem}>{savingMenuItem ? "Guardando..." : "Guardar"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

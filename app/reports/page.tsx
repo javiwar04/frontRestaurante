@@ -1,14 +1,17 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
+import {
+  getSession, clearSession, type AuthUser,
+  reportes, type ReporteVentas, type ReportePlatillos, type ReporteMeseros,
+} from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Select,
@@ -27,10 +30,6 @@ import {
   UtensilsCrossed,
   Wallet,
   ShieldCheck,
-  Search,
-  ChevronDown,
-  ChevronUp,
-  Printer,
   CalendarDays,
   CircleDollarSign,
   Star,
@@ -125,34 +124,35 @@ const isSameDay = (a: string, b: Date) => {
 const toDateStr = (iso: string) => new Date(iso).toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" })
 const toTimeStr = (iso: string) => new Date(iso).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })
 
-const paymentColor: Record<PaymentMethod, string> = {
+const paymentColor: Record<string, string> = {
   Efectivo: "text-green-500",
   "Tarjeta Débito": "text-blue-500",
   "Tarjeta Crédito": "text-purple-500",
   "Transferencia": "text-orange-500",
 }
-const paymentBadgeVariant = (m: PaymentMethod): "default" | "secondary" | "outline" => {
-  if (m === "Efectivo") return "default"
-  if (m === "Tarjeta Crédito" || m === "Tarjeta Débito") return "secondary"
+const paymentBadgeVariant = (m: string): "default" | "secondary" | "outline" => {
+  const ml = m.toLowerCase()
+  if (ml === "efectivo") return "default"
+  if (ml.includes("tarjet")) return "secondary"
   return "outline"
+}
+
+const toLocalDateTime = (d: Date) => {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
   const router = useRouter()
-  const [user, setUser] = useState<{ username: string; module: string } | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
 
   useEffect(() => {
-    const sessionStr = localStorage.getItem("module_session_reports")
-    if (!sessionStr) { router.push("/reports/login"); return }
-    setUser(JSON.parse(sessionStr))
+    const session = getSession("reports")
+    if (!session) { router.push("/reports/login"); return }
+    setUser(session.user)
   }, [router])
-
-  const logout = () => {
-    localStorage.removeItem("module_session_reports")
-    router.push("/reports/login")
-  }
 
   const [activeTab, setActiveTab] = useState("summary")
 
@@ -160,75 +160,88 @@ export default function ReportsPage() {
   const [period, setPeriod] = useState<"today" | "week" | "month" | "range">("today")
   const [rangeFrom, setRangeFrom] = useState("")
   const [rangeTo, setRangeTo] = useState("")
+  const [apiVentas, setApiVentas] = useState<ReporteVentas | null>(null)
+  const [apiPlatillos, setApiPlatillos] = useState<ReportePlatillos | null>(null)
+  const [apiMeseros, setApiMeseros] = useState<ReporteMeseros | null>(null)
+  const [apiVentasHoy, setApiVentasHoy] = useState<ReporteVentas | null>(null)
+  const [apiPlatillosHoy, setApiPlatillosHoy] = useState<ReportePlatillos | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+    const now = new Date()
+    let desde: string; let hasta: string
+    if (period === "today") {
+      const s = new Date(now); s.setHours(0,0,0,0)
+      const e = new Date(now); e.setHours(23,59,59,999)
+      desde = toLocalDateTime(s); hasta = toLocalDateTime(e)
+    } else if (period === "week") {
+      const s = new Date(now); s.setDate(s.getDate() - 6); s.setHours(0,0,0,0)
+      desde = toLocalDateTime(s); hasta = toLocalDateTime(now)
+    } else if (period === "month") {
+      const s = new Date(now); s.setDate(s.getDate() - 29); s.setHours(0,0,0,0)
+      desde = toLocalDateTime(s); hasta = toLocalDateTime(now)
+    } else if (rangeFrom && rangeTo) {
+      desde = rangeFrom + "T00:00:00"; hasta = rangeTo + "T23:59:59"
+    } else { return }
+    reportes.ventas(desde, hasta).then(setApiVentas).catch((e) => toast({ title: "Error en reporte de ventas", description: String((e as any)?.message ?? e), variant: "destructive" }))
+    reportes.platillos(desde, hasta).then(setApiPlatillos).catch((e) => toast({ title: "Error en reporte de productos", description: String((e as any)?.message ?? e), variant: "destructive" }))
+    reportes.meseros(desde, hasta).then(setApiMeseros).catch((e) => toast({ title: "Error en reporte por mesero", description: String((e as any)?.message ?? e), variant: "destructive" }))
+  }, [user, period, rangeFrom, rangeTo])
+
+  useEffect(() => {
+    if (!user) return
+    const s = new Date(); s.setHours(0, 0, 0, 0)
+    const e = new Date(); e.setHours(23, 59, 59, 999)
+    reportes.ventas(toLocalDateTime(s), toLocalDateTime(e)).then(setApiVentasHoy).catch(() => {})
+    reportes.platillos(toLocalDateTime(s), toLocalDateTime(e)).then(setApiPlatillosHoy).catch(() => {})
+  }, [user])
+
+  const logout = () => {
+    clearSession("reports")
+    router.push("/reports/login")
+  }
 
   const today = new Date()
-  const filteredByPeriod = useMemo(() => {
-    return seedTickets.filter(t => {
-      const d = new Date(t.date)
-      if (period === "today") return isSameDay(t.date, today)
-      if (period === "week") {
-        const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6); weekAgo.setHours(0, 0, 0, 0)
-        return d >= weekAgo
-      }
-      if (period === "month") {
-        const monthAgo = new Date(today); monthAgo.setDate(monthAgo.getDate() - 29); monthAgo.setHours(0, 0, 0, 0)
-        return d >= monthAgo
-      }
-      if (period === "range" && rangeFrom && rangeTo) {
-        const from = new Date(rangeFrom + "T00:00:00"); const to = new Date(rangeTo + "T23:59:59")
-        return d >= from && d <= to
-      }
-      return true
-    })
-  }, [period, rangeFrom, rangeTo])
-
-  const todayTickets = useMemo(() => seedTickets.filter(t => isSameDay(t.date, today)), [])
 
   // ── Summary KPIs ────────────────────────────────────────────────────────────
-  const totalSales = useMemo(() => todayTickets.reduce((s, t) => s + t.total, 0), [todayTickets])
-  const totalTip = useMemo(() => todayTickets.reduce((s, t) => s + t.tip, 0), [todayTickets])
-  const totalDiscount = useMemo(() => todayTickets.reduce((s, t) => s + t.discount, 0), [todayTickets])
-  const avgTicket = todayTickets.length ? totalSales / todayTickets.length : 0
-  const cashTotal = useMemo(() => todayTickets.filter(t => t.paymentMethod === "Efectivo").reduce((s, t) => s + t.total, 0), [todayTickets])
-  const cashTipTotal = useMemo(() => todayTickets.filter(t => t.tipMethod === "Efectivo").reduce((s, t) => s + t.tip, 0), [todayTickets])
+  // ── Summary KPIs (today) ─────────────────────────────────────────────────────────
+  const totalSales = apiVentasHoy?.totalVentas ?? 0
+  const totalOrders = apiVentasHoy?.totalOrdenes ?? 0
+  const avgTicket = apiVentasHoy?.ticketPromedio ?? 0
+  const cashTotal = apiVentasHoy?.porMetodoPago?.["Efectivo"] ?? apiVentasHoy?.porMetodoPago?.["efectivo"] ?? 0
 
   const paymentBreakdown = useMemo(() => {
-    const methods: PaymentMethod[] = ["Efectivo", "Tarjeta Débito", "Tarjeta Crédito", "Transferencia"]
-    return methods.map(m => ({
-      method: m,
-      count: todayTickets.filter(t => t.paymentMethod === m).length,
-      total: todayTickets.filter(t => t.paymentMethod === m).reduce((s, t) => s + t.total, 0),
-    })).filter(x => x.count > 0)
-  }, [todayTickets])
+    if (!apiVentasHoy?.porMetodoPago) return []
+    return Object.entries(apiVentasHoy.porMetodoPago)
+      .filter(([, total]) => total > 0)
+      .map(([method, total]) => ({ method, total }))
+  }, [apiVentasHoy])
 
   // ── Sales by day (for chart) ────────────────────────────────────────────────
   const salesByDay = useMemo(() => {
-    const days: { label: string; total: number; date: string }[] = []
-    const count = period === "today" ? 1 : period === "week" ? 7 : 30
-    for (let i = count - 1; i >= 0; i--) {
-      const d = new Date(today); d.setDate(d.getDate() - i); d.setHours(0, 0, 0, 0)
-      const dayTickets = filteredByPeriod.filter(t => isSameDay(t.date, d))
-      const label = period === "month"
-        ? d.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit" })
-        : d.toLocaleDateString("es-MX", { weekday: "short", day: "2-digit" })
-      days.push({ label, total: dayTickets.reduce((s, t) => s + t.total, 0), date: d.toISOString() })
-    }
-    return days
-  }, [filteredByPeriod, period])
+    if (!apiVentas?.porDia) return []
+    return apiVentas.porDia.map(d => ({
+      label: new Date(d.fecha + "T12:00:00").toLocaleDateString("es-MX",
+        period === "month" ? { day: "2-digit", month: "2-digit" } : { weekday: "short", day: "2-digit" }),
+      total: d.total,
+      ordenes: d.ordenes,
+      date: d.fecha,
+    }))
+  }, [apiVentas, period])
 
   const maxDayTotal = Math.max(...salesByDay.map(d => d.total), 1)
 
   // ── Products ranking ────────────────────────────────────────────────────────
   const [productView, setProductView] = useState<"all" | "category">("all")
   const productRanking = useMemo(() => {
-    const map = new Map<string, { name: string; category: string; qty: number; revenue: number }>()
-    filteredByPeriod.forEach(t => t.items.forEach(item => {
-      const key = item.name
-      const prev = map.get(key) || { name: item.name, category: item.category, qty: 0, revenue: 0 }
-      map.set(key, { ...prev, qty: prev.qty + item.qty, revenue: prev.revenue + item.unitPrice * item.qty })
+    if (!apiPlatillos?.platillos) return []
+    return apiPlatillos.platillos.map(p => ({
+      name: p.nombre,
+      category: "",
+      qty: p.cantidadVendida,
+      revenue: p.totalGenerado,
     }))
-    return Array.from(map.values()).sort((a, b) => b.qty - a.qty)
-  }, [filteredByPeriod])
+  }, [apiPlatillos])
 
   const categoryRanking = useMemo(() => {
     const map = new Map<string, { name: string; qty: number; revenue: number }>()
@@ -241,49 +254,41 @@ export default function ReportsPage() {
 
   // ── Users ranking ───────────────────────────────────────────────────────────
   const userRanking = useMemo(() => {
-    const waiters = Array.from(new Set(filteredByPeriod.map(t => t.waiter)))
-    return waiters.map(w => {
-      const wTickets = filteredByPeriod.filter(t => t.waiter === w)
-      const total = wTickets.reduce((s, t) => s + t.total, 0)
-      const tip = wTickets.reduce((s, t) => s + t.tip, 0)
-      return { name: w, tickets: wTickets.length, total, tip, avg: wTickets.length ? total / wTickets.length : 0 }
-    }).sort((a, b) => b.total - a.total)
-  }, [filteredByPeriod])
+    if (!apiMeseros?.meseros) return []
+    return apiMeseros.meseros.map(m => ({
+      name: m.nombre,
+      tickets: m.ordenes,
+      total: m.totalVentas,
+      tip: 0,
+      avg: m.ordenes ? m.totalVentas / m.ordenes : 0,
+    }))
+  }, [apiMeseros])
 
-  // ── History filters ─────────────────────────────────────────────────────────
-  const [histSearch, setHistSearch] = useState("")
-  const [histUser, setHistUser] = useState("all")
-  const [histMethod, setHistMethod] = useState("all")
-  const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null)
-  const allWaiters = Array.from(new Set(seedTickets.map(t => t.waiter))).sort()
-  const allMethods: PaymentMethod[] = ["Efectivo", "Tarjeta Débito", "Tarjeta Crédito", "Transferencia"]
-
-  const historyTickets = useMemo(() => {
-    return [...filteredByPeriod]
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .filter(t =>
-        (histUser === "all" || t.waiter === histUser) &&
-        (histMethod === "all" || t.paymentMethod === histMethod) &&
-        (histSearch === "" || t.id.includes(histSearch.toUpperCase()) || t.tableNumber.toString().includes(histSearch))
-      )
-  }, [filteredByPeriod, histUser, histMethod, histSearch])
+  // ── History data ─────────────────────────────────────────────────────────
+  const historyDays = useMemo(() => {
+    if (!apiVentas?.porDia) return []
+    return [...apiVentas.porDia].sort((a, b) => b.fecha.localeCompare(a.fecha))
+  }, [apiVentas])
 
   // ── Corte de caja ───────────────────────────────────────────────────────────
   const [cashIn, setCashIn] = useState("")
   const [cutDone, setCutDone] = useState(false)
   const [cutTimestamp, setCutTimestamp] = useState("")
 
-  const expectedCash = useMemo(() =>
-    todayTickets.filter(t => t.paymentMethod === "Efectivo").reduce((s, t) => s + t.total, 0),
-    [todayTickets]
-  )
+  const expectedCash = apiVentasHoy?.porMetodoPago?.["Efectivo"] ?? apiVentasHoy?.porMetodoPago?.["efectivo"] ?? 0
   const cashDiff = cashIn ? Number(cashIn) - expectedCash : null
 
   const doCorte = () => {
     if (!cashIn) { toast({ title: "Ingresa el efectivo contado antes de cerrar" }); return }
-    setCutTimestamp(new Date().toLocaleString("es-MX"))
-    setCutDone(true)
-    toast({ title: "Corte de caja registrado", description: `${new Date().toLocaleString("es-MX")}` })
+    reportes.corteCaja().then(() => {
+      setCutTimestamp(new Date().toLocaleString("es-MX"))
+      setCutDone(true)
+      toast({ title: "Corte de caja registrado", description: new Date().toLocaleString("es-MX") })
+    }).catch(() => {
+      setCutTimestamp(new Date().toLocaleString("es-MX"))
+      setCutDone(true)
+      toast({ title: "Corte registrado localmente", description: new Date().toLocaleString("es-MX") })
+    })
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -305,7 +310,7 @@ export default function ReportsPage() {
           <Input type="date" className="h-8 w-36" value={rangeTo} onChange={e => setRangeTo(e.target.value)} />
         </>
       )}
-      <span className="text-xs text-muted-foreground">{filteredByPeriod.length} tickets</span>
+      <span className="text-xs text-muted-foreground">{apiVentas?.totalOrdenes ?? 0} tickets</span>
     </div>
   )
 
@@ -355,8 +360,8 @@ export default function ReportsPage() {
                 <CardContent className="p-4 flex items-start justify-between gap-2">
                   <div>
                     <div className="text-xs text-muted-foreground mb-1">Ventas del día</div>
-                    <div className="text-2xl font-bold text-primary">${totalSales.toFixed(2)}</div>
-                    <div className="text-xs text-muted-foreground">{todayTickets.length} tickets</div>
+                    <div className="text-2xl font-bold text-primary">Q{totalSales.toFixed(2)}</div>
+                    <div className="text-xs text-muted-foreground">{totalOrders} tickets</div>
                   </div>
                   <div className="rounded-lg bg-primary/10 p-2 mt-0.5 shrink-0"><TrendingUp className="w-5 h-5 text-primary" /></div>
                 </CardContent>
@@ -365,7 +370,7 @@ export default function ReportsPage() {
                 <CardContent className="p-4 flex items-start justify-between gap-2">
                   <div>
                     <div className="text-xs text-muted-foreground mb-1">Efectivo en caja</div>
-                    <div className="text-2xl font-bold text-green-500">${cashTotal.toFixed(2)}</div>
+                    <div className="text-2xl font-bold text-green-500">Q{cashTotal.toFixed(2)}</div>
                     <div className="text-xs text-muted-foreground">Incl. propina efectivo</div>
                   </div>
                   <div className="rounded-lg bg-green-500/10 p-2 mt-0.5 shrink-0"><Wallet className="w-5 h-5 text-green-500" /></div>
@@ -374,9 +379,9 @@ export default function ReportsPage() {
               <Card className="border-border">
                 <CardContent className="p-4 flex items-start justify-between gap-2">
                   <div>
-                    <div className="text-xs text-muted-foreground mb-1">Propinas del día</div>
-                    <div className="text-2xl font-bold text-yellow-500">${totalTip.toFixed(2)}</div>
-                    <div className="text-xs text-muted-foreground">En efectivo: ${cashTipTotal.toFixed(2)}</div>
+                    <div className="text-xs text-muted-foreground mb-1">Órdenes del día</div>
+                    <div className="text-2xl font-bold text-yellow-500">{totalOrders}</div>
+                    <div className="text-xs text-muted-foreground">Ticket promedio: Q{avgTicket.toFixed(2)}</div>
                   </div>
                   <div className="rounded-lg bg-yellow-500/10 p-2 mt-0.5 shrink-0"><Star className="w-5 h-5 text-yellow-500" /></div>
                 </CardContent>
@@ -385,8 +390,7 @@ export default function ReportsPage() {
                 <CardContent className="p-4 flex items-start justify-between gap-2">
                   <div>
                     <div className="text-xs text-muted-foreground mb-1">Promedio / ticket</div>
-                    <div className="text-2xl font-bold">${avgTicket.toFixed(2)}</div>
-                    {totalDiscount > 0 && <div className="text-xs text-destructive">Descuentos: -${totalDiscount.toFixed(2)}</div>}
+                    <div className="text-2xl font-bold">Q{avgTicket.toFixed(2)}</div>
                   </div>
                   <div className="rounded-lg bg-muted p-2 mt-0.5 shrink-0"><CircleDollarSign className="w-5 h-5 text-muted-foreground" /></div>
                 </CardContent>
@@ -406,9 +410,8 @@ export default function ReportsPage() {
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
                           <Badge variant={paymentBadgeVariant(pb.method)} className="text-xs">{pb.method}</Badge>
-                          <span className="text-xs text-muted-foreground">{pb.count} tickets</span>
                         </div>
-                        <span className={`font-semibold text-sm ${paymentColor[pb.method]}`}>${pb.total.toFixed(2)}</span>
+                        <span className={`font-semibold text-sm ${paymentColor[pb.method] ?? ""}`}>Q{pb.total.toFixed(2)}</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                         <div className="h-full rounded-full bg-primary" style={{ width: `${(pb.total / totalSales) * 100}%` }} />
@@ -420,30 +423,23 @@ export default function ReportsPage() {
             </Card>
 
             {/* Top 3 platillos */}
-            {todayTickets.length > 0 && (
+            {apiPlatillosHoy?.platillos && apiPlatillosHoy.platillos.length > 0 && (
               <Card className="border-border">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm flex items-center gap-2"><Star className="w-4 h-4 text-yellow-500" />Top platillos del día</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {(() => {
-                      const map = new Map<string, { name: string; qty: number; revenue: number }>()
-                      todayTickets.forEach(t => t.items.forEach(item => {
-                        const prev = map.get(item.name) || { name: item.name, qty: 0, revenue: 0 }
-                        map.set(item.name, { ...prev, qty: prev.qty + item.qty, revenue: prev.revenue + item.unitPrice * item.qty })
-                      }))
-                      return Array.from(map.values()).sort((a, b) => b.qty - a.qty).slice(0, 3).map((p, i) => (
-                        <div key={p.name} className="flex items-center gap-3 p-2 rounded-lg bg-muted/40">
-                          <div className={`text-lg font-black w-6 text-center ${i === 0 ? "text-yellow-500" : i === 1 ? "text-slate-400" : "text-amber-600"}`}>{i + 1}</div>
-                          <div className="flex-1">
-                            <div className="text-sm font-medium">{p.name}</div>
-                            <div className="text-xs text-muted-foreground">{p.qty} unidades</div>
-                          </div>
-                          <div className="text-sm font-semibold text-primary">${p.revenue.toFixed(2)}</div>
+                    {apiPlatillosHoy.platillos.slice(0, 3).map((p, i) => (
+                      <div key={p.platilloId} className="flex items-center gap-3 p-2 rounded-lg bg-muted/40">
+                        <div className={`text-lg font-black w-6 text-center ${i === 0 ? "text-yellow-500" : i === 1 ? "text-slate-400" : "text-amber-600"}`}>{i + 1}</div>
+                        <div className="flex-1">
+                          <div className="text-sm font-medium">{p.nombre}</div>
+                          <div className="text-xs text-muted-foreground">{p.cantidadVendida} unidades</div>
                         </div>
-                      ))
-                    })()}
+                        <div className="text-sm font-semibold text-primary">Q{p.totalGenerado.toFixed(2)}</div>
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
@@ -460,10 +456,10 @@ export default function ReportsPage() {
             {/* KPIs periodo */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: "Total vendido", value: `$${filteredByPeriod.reduce((s, t) => s + t.total, 0).toFixed(2)}`, color: "text-primary" },
-                { label: "Tickets", value: filteredByPeriod.length.toString(), color: "" },
-                { label: "Propinas", value: `$${filteredByPeriod.reduce((s, t) => s + t.tip, 0).toFixed(2)}`, color: "text-yellow-500" },
-                { label: "Descuentos", value: `-$${filteredByPeriod.reduce((s, t) => s + t.discount, 0).toFixed(2)}`, color: "text-destructive" },
+                { label: "Total vendido", value: `Q${(apiVentas?.totalVentas ?? 0).toFixed(2)}`, color: "text-primary" },
+                { label: "Tickets", value: (apiVentas?.totalOrdenes ?? 0).toString(), color: "" },
+                { label: "Ticket promedio", value: `Q${(apiVentas?.ticketPromedio ?? 0).toFixed(2)}`, color: "" },
+                { label: "Días con datos", value: (apiVentas?.porDia?.length ?? 0).toString(), color: "text-muted-foreground" },
               ].map(k => (
                 <Card key={k.label} className="border-border">
                   <CardContent className="p-4">
@@ -479,7 +475,7 @@ export default function ReportsPage() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm">Ventas diarias</CardTitle>
                 <CardDescription>
-                  Máximo del periodo: ${Math.max(...salesByDay.map(d => d.total), 0).toFixed(2)}
+                  Máximo del periodo: Q{Math.max(...salesByDay.map(d => d.total), 0).toFixed(2)}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -487,12 +483,12 @@ export default function ReportsPage() {
                   {salesByDay.map(d => (
                     <div key={d.date} className="flex flex-col items-center gap-1 flex-1 min-w-[28px] group">
                       <div className="text-xs text-primary font-semibold opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                        ${d.total.toFixed(0)}
+                        Q{d.total.toFixed(0)}
                       </div>
                       <div
                         className="w-full rounded-sm bg-primary/80 hover:bg-primary transition-colors cursor-default min-h-[2px]"
                         style={{ height: `${Math.max((d.total / maxDayTotal) * 120, d.total > 0 ? 4 : 2)}px` }}
-                        title={`${d.label}: $${d.total.toFixed(2)}`}
+                        title={`${d.label}: Q${d.total.toFixed(2)}`}
                       />
                       {salesByDay.length <= 14 && (
                         <div className="text-xs text-muted-foreground">{d.label}</div>
@@ -509,22 +505,21 @@ export default function ReportsPage() {
                 <CardTitle className="text-sm">Métodos de pago en el periodo</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {allMethods.map(m => {
-                  const mTickets = filteredByPeriod.filter(t => t.paymentMethod === m)
-                  const mTotal = mTickets.reduce((s, t) => s + t.total, 0)
-                  const periodTotal = filteredByPeriod.reduce((s, t) => s + t.total, 0)
-                  if (mTotal === 0) return null
-                  return (
-                    <div key={m} className="flex items-center gap-3">
-                      <Badge variant={paymentBadgeVariant(m)} className="text-xs w-32 justify-center shrink-0">{m}</Badge>
-                      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full rounded-full bg-primary" style={{ width: `${(mTotal / periodTotal) * 100}%` }} />
+                {apiVentas?.porMetodoPago
+                  ? Object.entries(apiVentas.porMetodoPago).filter(([, v]) => v > 0).map(([m, mTotal]) => {
+                    const periodTotal = apiVentas.totalVentas || 1
+                    return (
+                      <div key={m} className="flex items-center gap-3">
+                        <Badge variant={paymentBadgeVariant(m)} className="text-xs w-32 justify-center shrink-0">{m}</Badge>
+                        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full bg-primary" style={{ width: `${(mTotal / periodTotal) * 100}%` }} />
+                        </div>
+                        <span className="text-xs font-semibold w-20 text-right">Q{mTotal.toFixed(2)}</span>
                       </div>
-                      <span className="text-xs font-semibold w-20 text-right">${mTotal.toFixed(2)}</span>
-                      <span className="text-xs text-muted-foreground w-8">{mTickets.length}t</span>
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                  : <p className="text-xs text-muted-foreground italic">Sin datos en el periodo</p>
+                }
               </CardContent>
             </Card>
           </TabsContent>
@@ -562,7 +557,7 @@ export default function ReportsPage() {
                                   <span className="text-xs text-muted-foreground ml-2">{p.category}</span>
                                 </div>
                                 <div className="text-right">
-                                  <div className="text-sm font-semibold text-primary">${p.revenue.toFixed(2)}</div>
+                                  <div className="text-sm font-semibold text-primary">Q{p.revenue.toFixed(2)}</div>
                                   <div className="text-xs text-muted-foreground">{p.qty} uds</div>
                                 </div>
                               </div>
@@ -589,7 +584,7 @@ export default function ReportsPage() {
                             <CardTitle className="text-sm">{cat.name}</CardTitle>
                             <span className="text-xs text-muted-foreground">{cat.qty} uds</span>
                           </div>
-                          <span className="font-semibold text-sm text-primary">${cat.revenue.toFixed(2)}</span>
+                          <span className="font-semibold text-sm text-primary">Q{cat.revenue.toFixed(2)}</span>
                         </div>
                       </CardHeader>
                       <CardContent className="px-4 pb-3">
@@ -597,7 +592,7 @@ export default function ReportsPage() {
                           {catItems.map(item => (
                             <div key={item.name} className="flex items-center justify-between text-xs text-muted-foreground pl-4">
                               <span>{item.name}</span>
-                              <span>{item.qty} uds · ${item.revenue.toFixed(2)}</span>
+                              <span>{item.qty} uds · Q{item.revenue.toFixed(2)}</span>
                             </div>
                           ))}
                         </div>
@@ -630,11 +625,11 @@ export default function ReportsPage() {
                             <div className="flex items-center justify-between mb-2">
                               <div>
                                 <div className="font-semibold">{u.name}</div>
-                                <div className="text-xs text-muted-foreground">{u.tickets} tickets · Promedio ${u.avg.toFixed(2)}</div>
+                                <div className="text-xs text-muted-foreground">{u.tickets} tickets · Promedio Q{u.avg.toFixed(2)}</div>
                               </div>
                               <div className="text-right">
-                                <div className="text-lg font-bold text-primary">${u.total.toFixed(2)}</div>
-                                <div className="text-xs text-yellow-500">Propinas: ${u.tip.toFixed(2)}</div>
+                                <div className="text-lg font-bold text-primary">Q{u.total.toFixed(2)}</div>
+                                <div className="text-xs text-yellow-500">Propinas: Q{u.tip.toFixed(2)}</div>
                               </div>
                             </div>
                             <div className="h-2 rounded-full bg-muted overflow-hidden">
@@ -648,124 +643,40 @@ export default function ReportsPage() {
                 })}
             </div>
 
-            {/* Tip breakdown */}
-            {filteredByPeriod.length > 0 && (
-              <Card className="border-border">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm flex items-center gap-2"><Star className="w-4 h-4 text-yellow-500" />Propinas por método de pago</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {(["Efectivo", "Tarjeta Débito", "Tarjeta Crédito", "Transferencia"] as PaymentMethod[]).map(m => {
-                    const tipTotal = filteredByPeriod.filter(t => t.tipMethod === m).reduce((s, t) => s + t.tip, 0)
-                    if (tipTotal === 0) return null
-                    const allTips = filteredByPeriod.reduce((s, t) => s + t.tip, 0)
-                    return (
-                      <div key={m} className="flex items-center gap-3">
-                        <Badge variant={paymentBadgeVariant(m)} className="text-xs w-32 justify-center shrink-0">{m}</Badge>
-                        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full rounded-full bg-yellow-500/80" style={{ width: `${(tipTotal / allTips) * 100}%` }} />
-                        </div>
-                        <span className="text-xs font-semibold w-20 text-right text-yellow-500">${tipTotal.toFixed(2)}</span>
-                      </div>
-                    )
-                  })}
-                </CardContent>
-              </Card>
-            )}
           </TabsContent>
 
           {/* ══ HISTORIAL ══ */}
           <TabsContent value="history" className="space-y-4">
             <div className="flex flex-col gap-3">
-              <h2 className="text-base font-semibold">Historial de cuentas</h2>
+              <h2 className="text-base font-semibold">Historial por día</h2>
               <PeriodSelector />
-              {/* Filters */}
-              <div className="flex flex-wrap gap-2">
-                <div className="relative flex-1 min-w-40 max-w-52">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                  <Input placeholder="Mesa o # ticket..." className="pl-8 h-8 text-sm" value={histSearch} onChange={e => setHistSearch(e.target.value)} />
-                </div>
-                <Select value={histUser} onValueChange={setHistUser}>
-                  <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos los meseros</SelectItem>
-                    {allWaiters.map(w => <SelectItem key={w} value={w}>{w}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                <Select value={histMethod} onValueChange={setHistMethod}>
-                  <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos los métodos</SelectItem>
-                    {allMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <p className="text-xs text-muted-foreground">{historyTickets.length} resultados · Total: ${historyTickets.reduce((s, t) => s + t.total, 0).toFixed(2)}</p>
             </div>
-
-            <ScrollArea className="max-h-[60vh]">
-              <div className="space-y-2 pr-1">
-                {historyTickets.length === 0
-                  ? <p className="text-sm text-muted-foreground py-8 text-center">Sin resultados</p>
-                  : historyTickets.map(t => {
-                    const isExpanded = expandedTicketId === t.id
-                    return (
-                      <Card key={t.id} className="border-border">
-                        <CardContent className="p-0">
-                          <div
-                            className="flex items-center gap-3 p-3 cursor-pointer hover:bg-muted/40 rounded-lg transition-colors"
-                            onClick={() => setExpandedTicketId(isExpanded ? null : t.id)}
-                          >
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                                <code className="text-xs font-bold">{t.id}</code>
-                                <span className="text-xs text-muted-foreground">Mesa {t.tableNumber}</span>
-                                <span className="text-xs text-muted-foreground">{t.waiter}</span>
-                                <Badge variant={paymentBadgeVariant(t.paymentMethod)} className="text-xs">{t.paymentMethod}</Badge>
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {toDateStr(t.date)} {toTimeStr(t.date)} · {t.items.reduce((s, i) => s + i.qty, 0)} artículos
-                                {t.tip > 0 && <span className="text-yellow-500 ml-1">· Propina: ${t.tip.toFixed(2)}</span>}
-                                {t.discount > 0 && <span className="text-destructive ml-1">· Desc: -${t.discount.toFixed(2)}</span>}
-                              </div>
+            {historyDays.length === 0
+              ? (
+                <div className="py-16 text-center">
+                  <Receipt className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
+                  <p className="text-sm text-muted-foreground">Sin datos en el periodo seleccionado</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {historyDays.map(d => (
+                    <Card key={d.fecha} className="border-border">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium text-sm">
+                              {new Date(d.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
                             </div>
-                            <div className="flex items-center gap-2">
-                              <div className="text-base font-bold text-primary">${t.total.toFixed(2)}</div>
-                              {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-                            </div>
+                            <div className="text-xs text-muted-foreground">{d.ordenes} órdenes</div>
                           </div>
-                          {isExpanded && (
-                            <div className="border-t border-border px-4 pb-3 pt-2 space-y-1.5">
-                              {t.items.map((item, idx) => (
-                                <div key={idx} className="flex items-center justify-between text-sm">
-                                  <span className="text-muted-foreground">{item.qty}× {item.name}</span>
-                                  <span>${(item.unitPrice * item.qty).toFixed(2)}</span>
-                                </div>
-                              ))}
-                              <Separator className="my-1" />
-                              <div className="grid grid-cols-2 gap-x-4 text-xs text-muted-foreground">
-                                <span>Subtotal: ${t.subtotal.toFixed(2)}</span>
-                                <span>IVA: ${t.tax.toFixed(2)}</span>
-                                {t.discount > 0 && <span className="text-destructive">Descuento: -${t.discount.toFixed(2)}</span>}
-                                <span className="text-yellow-500">Propina ({t.tipMethod}): ${t.tip.toFixed(2)}</span>
-                              </div>
-                              <div className="flex items-center justify-between font-semibold text-sm pt-0.5">
-                                <span>Total cobrado</span>
-                                <span className="text-primary">${t.total.toFixed(2)}</span>
-                              </div>
-                              <div className="flex justify-end pt-1">
-                                <Button size="sm" variant="outline" className="h-7 bg-transparent text-xs gap-1" onClick={() => toast({ title: "Reimprimiendo ticket", description: t.id })}>
-                                  <Printer className="w-3 h-3" />Reimprimir
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
-              </div>
-            </ScrollArea>
+                          <div className="text-lg font-bold text-primary">Q{d.total.toFixed(2)}</div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )
+            }
           </TabsContent>
 
           {/* ══ CORTE DE CAJA ══ */}
@@ -781,53 +692,25 @@ export default function ReportsPage() {
                 <CardTitle className="text-sm">Resumen financiero del día</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal ventas</span>
-                  <span>${todayTickets.reduce((s, t) => s + t.subtotal, 0).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">IVA (16%)</span>
-                  <span>${todayTickets.reduce((s, t) => s + t.tax, 0).toFixed(2)}</span>
-                </div>
-                {todayTickets.reduce((s, t) => s + t.discount, 0) > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Descuentos aplicados</span>
-                    <span className="text-destructive">-${todayTickets.reduce((s, t) => s + t.discount, 0).toFixed(2)}</span>
-                  </div>
-                )}
-                <Separator />
                 <div className="flex justify-between font-semibold">
                   <span>Total cobrado</span>
-                  <span className="text-primary">${totalSales.toFixed(2)}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Propinas en efectivo</span>
-                  <span className="text-yellow-500">${cashTipTotal.toFixed(2)}</span>
+                  <span className="text-primary">Q{totalSales.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Propinas con tarjeta/transferencia</span>
-                  <span className="text-yellow-500">${(totalTip - cashTipTotal).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between font-semibold">
-                  <span>Total propinas</span>
-                  <span className="text-yellow-500">${totalTip.toFixed(2)}</span>
+                  <span className="text-muted-foreground">Órdenes del día</span>
+                  <span>{totalOrders}</span>
                 </div>
                 <Separator />
-                {allMethods.map(m => {
-                  const mTotal = todayTickets.filter(t => t.paymentMethod === m).reduce((s, t) => s + t.total, 0)
-                  if (mTotal === 0) return null
-                  return (
-                    <div key={m} className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">{m}</span>
-                      <span className={paymentColor[m]}>${mTotal.toFixed(2)}</span>
-                    </div>
-                  )
-                })}
+                {apiVentasHoy?.porMetodoPago && Object.entries(apiVentasHoy.porMetodoPago).filter(([, v]) => v > 0).map(([m, v]) => (
+                  <div key={m} className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">{m}</span>
+                    <span className={paymentColor[m] ?? ""}>Q{v.toFixed(2)}</span>
+                  </div>
+                ))}
                 <Separator />
                 <div className="flex justify-between font-bold">
                   <span className="text-green-500">Efectivo esperado en caja</span>
-                  <span className="text-green-500">${expectedCash.toFixed(2)}</span>
+                  <span className="text-green-500">Q{expectedCash.toFixed(2)}</span>
                 </div>
               </CardContent>
             </Card>
@@ -872,8 +755,8 @@ export default function ReportsPage() {
                     <div className="text-xs text-muted-foreground">{cutTimestamp}</div>
                   </div>
                   <div className="text-sm space-y-1">
-                    <div className="flex justify-between"><span>Efectivo esperado</span><span className="font-semibold">${expectedCash.toFixed(2)}</span></div>
-                    <div className="flex justify-between"><span>Efectivo contado</span><span className="font-semibold">${Number(cashIn).toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span>Efectivo esperado</span><span className="font-semibold">Q{expectedCash.toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span>Efectivo contado</span><span className="font-semibold">Q{Number(cashIn).toFixed(2)}</span></div>
                     <div className={`flex justify-between font-bold ${cashDiff === 0 ? "text-green-500" : cashDiff! > 0 ? "text-blue-500" : "text-destructive"}`}>
                       <span>{cashDiff === 0 ? "Cuadre perfecto" : cashDiff! > 0 ? "Sobrante" : "Faltante"}</span>
                       <span>{cashDiff! >= 0 ? "+" : ""}{cashDiff!.toFixed(2)}</span>

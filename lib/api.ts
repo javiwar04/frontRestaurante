@@ -1,0 +1,1054 @@
+/**
+ * API client for RestSF backend
+ * Base URL: http://localhost:5006
+ * Auth: JWT Bearer token stored per-module in localStorage
+ */
+
+export const API_BASE = "http://localhost:5006"
+
+// ─── Session helpers ─────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: string
+  nombre: string
+  username: string
+  rol: string
+  modules: string[]
+}
+
+export interface SessionData {
+  token: string
+  user: AuthUser
+}
+
+export function getSession(module: string): SessionData | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(`module_session_${module}`)
+    return raw ? (JSON.parse(raw) as SessionData) : null
+  } catch {
+    return null
+  }
+}
+
+export function getToken(module: string): string | null {
+  return getSession(module)?.token ?? null
+}
+
+export function getAnyToken(): string | null {
+  const modules = ["kitchen", "pos", "admin", "inventory", "billing"]
+  for (const m of modules) {
+    const t = getToken(m)
+    if (t) return t
+  }
+  return null
+}
+
+export function saveSession(module: string, data: SessionData): void {
+  localStorage.setItem(`module_session_${module}`, JSON.stringify(data))
+}
+
+export function clearSession(module: string): void {
+  localStorage.removeItem(`module_session_${module}`)
+}
+
+// ─── Generic fetcher ─────────────────────────────────────────────────────────
+
+export interface ApiError {
+  message: string
+  status: number
+}
+
+/**
+ * Sesión expirada o token inválido: limpia la sesión del módulo y
+ * redirige a su pantalla de login. Evita que cada página tenga que
+ * manejar el 401 por su cuenta.
+ */
+function handleUnauthorized(module?: string): void {
+  if (typeof window === "undefined") return
+  if (module) clearSession(module)
+  const loginPath = module ? `/${module}/login` : "/login"
+  // Evitar loops de redirección si ya estamos en un login
+  if (!window.location.pathname.includes("/login")) {
+    window.location.href = loginPath
+  }
+}
+
+export async function apiFetch<T>(
+  endpoint: string,
+  options: RequestInit & { module?: string } = {}
+): Promise<T> {
+  const { module, ...fetchOptions } = options
+  const token = module ? (getToken(module) || getAnyToken()) : null
+
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    ...fetchOptions,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(fetchOptions.headers ?? {}),
+    },
+  })
+
+  if (res.status === 401 && endpoint !== "/auth/login") {
+    handleUnauthorized(module)
+    const err: ApiError = { message: "Sesión expirada. Inicia sesión de nuevo.", status: 401 }
+    throw err
+  }
+
+  if (!res.ok) {
+    let message = `Error ${res.status}: ${res.statusText}`
+    try {
+      const rawBody = await res.json() as Record<string, unknown>
+      const validationErrors = rawBody.errors as Record<string, string[]> | undefined
+      if (validationErrors) {
+        message = Object.entries(validationErrors).map(([k, v]) => `${k}: ${v.join(", ")}`).join(" | ")
+      } else {
+        message = (rawBody.error ?? rawBody.message ?? rawBody.title ?? message) as string
+      }
+    } catch {
+      const text = await res.text().catch(() => "")
+      if (text) message = text
+    }
+    const err: ApiError = { message, status: res.status }
+    throw err
+  }
+
+  // Handle 204 No Content
+  if (res.status === 204) return undefined as unknown as T
+  return res.json() as Promise<T>
+}
+
+// ─── Auth endpoints ──────────────────────────────────────────────────────────
+
+export interface LoginRequest {
+  username: string
+  pin: string
+}
+
+export interface LoginResponse {
+  token: string
+  user: AuthUser
+}
+
+export async function authLogin(username: string, pin: string): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, pin } satisfies LoginRequest),
+  })
+}
+
+export async function authMe(module: string): Promise<AuthUser> {
+  return apiFetch<AuthUser>("/auth/me", { module })
+}
+
+export async function authLogout(module: string): Promise<{ ok: boolean }> {
+  const result = await apiFetch<{ ok: boolean }>("/auth/logout", {
+    method: "POST",
+    module,
+  })
+  clearSession(module)
+  return result
+}
+
+// ─── Categorías menú ─────────────────────────────────────────────────────────
+
+export interface CategoriaMenu {
+  id: string
+  nombre: string
+  descripcion?: string
+  activa: boolean
+  orden: number
+  creadoEn: string
+}
+
+export const categoriasMenu = {
+  getAll: (module = "pos") =>
+    apiFetch<CategoriaMenu[]>("/categorias-menu", { module }),
+  getOne: (id: string, module = "pos") =>
+    apiFetch<CategoriaMenu>(`/categorias-menu/${id}`, { module }),
+  create: (data: Partial<CategoriaMenu>, module = "admin") =>
+    apiFetch<CategoriaMenu>("/categorias-menu", {
+      method: "POST",
+      body: JSON.stringify(data),
+      module,
+    }),
+  update: (id: string, data: Partial<CategoriaMenu>, module = "admin") =>
+    apiFetch<CategoriaMenu>(`/categorias-menu/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+      module,
+    }),
+  remove: (id: string, module = "admin") =>
+    apiFetch<void>(`/categorias-menu/${id}`, { method: "DELETE", module }),
+}
+
+// ─── Platillos ───────────────────────────────────────────────────────────────
+
+export interface ModificadorOpcion {
+  id: string
+  nombre: string
+  precioDelta: number
+  esDefault: boolean
+  activo: boolean
+}
+
+export interface ModificadorGrupo {
+  grupoId: string
+  grupoNombre: string
+  tipo: "single" | "multiple"
+  obligatorio: boolean
+  minSelecciones: number
+  maxSelecciones: number
+  opciones: ModificadorOpcion[]
+}
+
+export interface Platillo {
+  id: string
+  nombre: string
+  descripcion?: string
+  precio: number
+  categoriaId: string
+  categoriaNombre?: string
+  disponible: boolean
+  imagen?: string
+  modificadores: ModificadorGrupo[]
+  creadoEn: string
+}
+
+// Forma que espera el backend al crear/actualizar (CreateModificadorGrupoDto):
+// los grupos/opciones nuevos aún no tienen id
+export interface CreateModificadorOpcionRequest {
+  nombre: string
+  precioDelta: number
+  esDefault?: boolean
+  activo?: boolean
+  orden?: number
+}
+
+export interface CreateModificadorGrupoRequest {
+  grupoNombre: string
+  tipo: "single" | "multiple"
+  obligatorio?: boolean
+  minSelecciones?: number
+  maxSelecciones?: number
+  orden?: number
+  opciones: CreateModificadorOpcionRequest[]
+}
+
+export interface CreatePlatilloRequest {
+  nombre: string
+  descripcion?: string
+  precio: number
+  categoriaId: string
+  disponible?: boolean
+  imagen?: string
+  modificadores?: CreateModificadorGrupoRequest[]
+}
+
+export const platillos = {
+  getAll: (module = "pos") =>
+    apiFetch<Platillo[]>("/platillos", { module }),
+  getOne: (id: string, module = "pos") =>
+    apiFetch<Platillo>(`/platillos/${id}`, { module }),
+  create: (data: CreatePlatilloRequest, module = "admin") =>
+    apiFetch<Platillo>("/platillos", {
+      method: "POST",
+      body: JSON.stringify(data),
+      module,
+    }),
+  update: (id: string, data: Partial<CreatePlatilloRequest>, module = "admin") =>
+    apiFetch<Platillo>(`/platillos/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+      module,
+    }),
+  remove: (id: string, module = "admin") =>
+    apiFetch<void>(`/platillos/${id}`, { method: "DELETE", module }),
+  setDisponible: (id: string, disponible: boolean, module = "admin") =>
+    apiFetch<Platillo>(`/platillos/${id}/disponible`, {
+      method: "PATCH",
+      body: JSON.stringify({ disponible }),
+      module,
+    }),
+}
+
+// ─── Secciones y Mesas ───────────────────────────────────────────────────────
+
+export interface Mesa {
+  id: string
+  numero: number
+  etiqueta?: string
+  capacidad: number
+  seccionId: string
+  activa?: boolean
+  notas?: string
+}
+
+export interface Seccion {
+  id: string
+  nombre: string
+  mesas: Mesa[]
+}
+
+export const secciones = {
+  getAll: (module = "pos") =>
+    apiFetch<Seccion[]>("/secciones", { module }),
+  create: (data: { nombre: string; orden?: number; activa?: boolean }, module = "admin") =>
+    apiFetch<Seccion>("/secciones", { method: "POST", body: JSON.stringify(data), module }),
+  update: (id: string, data: { nombre?: string; orden?: number; activa?: boolean }, module = "admin") =>
+    apiFetch<Seccion>(`/secciones/${id}`, { method: "PUT", body: JSON.stringify(data), module }),
+  remove: (id: string, module = "admin") =>
+    apiFetch<{ ok: boolean }>(`/secciones/${id}`, { method: "DELETE", module }),
+}
+
+export const mesas = {
+  getAll: (module = "pos") =>
+    apiFetch<Mesa[]>("/mesas", { module }),
+  create: (data: { numero: number; capacidad: number; seccionId: string; etiqueta?: string; activa?: boolean; notas?: string }, module = "admin") =>
+    apiFetch<Mesa>("/mesas", { method: "POST", body: JSON.stringify(data), module }),
+  update: (id: string, data: { numero?: number; capacidad?: number; seccionId?: string; etiqueta?: string; activa?: boolean; notas?: string }, module = "admin") =>
+    apiFetch<Mesa>(`/mesas/${id}`, { method: "PUT", body: JSON.stringify(data), module }),
+  remove: (id: string, module = "admin") =>
+    apiFetch<{ ok: boolean }>(`/mesas/${id}`, { method: "DELETE", module }),
+}
+
+// ─── Turnos ──────────────────────────────────────────────────────────────────
+
+export interface Turno {
+  id: string
+  usuarioId: string
+  usuarioNombre?: string
+  inicio: string
+  fin?: string | null
+  efectivoInicial?: number
+  totalVentas?: number
+  totalOrdenes?: number
+  ventasEfectivo?: number
+  ventasTarjeta?: number
+  ventasTransfer?: number
+  notas?: string | null
+}
+
+export interface CorteInfo {
+  turnoId: string
+  usuarioNombre: string
+  iniciadoEn: string
+  cerradoEn?: string
+  efectivoInicial: number
+  efectivoFinalSistema: number
+  efectivoFinalReal: number
+  diferencia: number
+  totalOrdenes: number
+  totalVentas: number
+  porMetodoPago: Record<string, number>
+}
+
+export const turnos = {
+  getActivo: async (module = "pos"): Promise<Turno | null> => {
+    try {
+      return await apiFetch<Turno>("/turnos/activo", { module })
+    } catch (e) {
+      // 404 = no hay turno activo — no es un error, devolver null
+      if ((e as { status?: number })?.status === 404) return null
+      throw e
+    }
+  },
+  getOne: (id: string, module = "pos") =>
+    apiFetch<Turno>(`/turnos/${id}`, { module }),
+  create: (data: { efectivoInicial: number }, module = "pos") =>
+    apiFetch<Turno>("/turnos", { method: "POST", body: JSON.stringify(data), module }),
+  cerrar: (id: string, data: { efectivoFinalReal: number; notas?: string }, module = "pos") =>
+    apiFetch<{ turno: Turno; corte: CorteInfo }>(`/turnos/${id}/cerrar`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+      module,
+    }),
+}
+
+// ─── Órdenes ─────────────────────────────────────────────────────────────────
+
+export interface OrdenItem {
+  id: number | string           // long en backend — llega como número
+  platilloId: string
+  platilloNombre?: string
+  nombre?: string            // alias devuelto por algunos endpoints
+  cantidad: number
+  precioUnitario: number
+  notas?: string
+  estado: "pendiente" | "en_preparacion" | "listo" | "entregado" | "cancelado"
+  modificadores?: {
+    opcionId?: string
+    opcionNombre?: string
+    grupoNombre?: string
+    precioDelta?: number
+  }[]
+}
+
+export interface Orden {
+  id: string
+  mesaId?: string
+  numeroMesa?: number
+  turnoId: string
+  meseroId: string
+  meseroNombre?: string
+  tipoServicio: "mesa" | "para_llevar" | "delivery"
+  // "servido" es lo que el backend asigna cuando cocina marca la orden lista
+  estado: "pendiente" | "abierta" | "en_cocina" | "lista" | "servido" | "pagada" | "cancelada" | "pagado" | "cancelado"
+  items: OrdenItem[]
+  subtotal: number
+  impuestos: number
+  total: number
+  descuento?: number
+  propina?: number
+  comensales?: number
+  notas?: string
+  creadoEn: string
+  actualizadoEn?: string
+}
+
+export interface UpdateOrdenRequest {
+  descuento: number
+  propina: number
+  notas?: string | null
+  comensales: number
+}
+
+export interface CreateOrdenItemRequest {
+  platilloId: string
+  nombre: string
+  cantidad: number
+  precioUnitario: number
+  notas?: string | null
+  modificadores?: {
+    grupoNombre: string
+    opcionNombre: string
+    opcionId?: string
+    precioDelta?: number
+  }[]
+}
+
+export interface CreateOrdenRequest {
+  mesaId?: string
+  turnoId: string
+  meseroId: string
+  tipoServicio: "mesa" | "para_llevar" | "delivery"
+  notas?: string | null
+  items: CreateOrdenItemRequest[]
+}
+
+export const ordenes = {
+  getAll: (module = "pos") =>
+    apiFetch<Orden[]>("/ordenes", { module }),
+  getOne: (id: string, module = "pos") =>
+    apiFetch<Orden>(`/ordenes/${id}`, { module }),
+  create: (data: CreateOrdenRequest, module = "pos") =>
+    apiFetch<Orden>("/ordenes", { method: "POST", body: JSON.stringify(data), module }),
+  update: (id: string, data: UpdateOrdenRequest, module = "pos") =>
+    apiFetch<Orden>(`/ordenes/${id}`, { method: "PUT", body: JSON.stringify(data), module }),
+  remove: (id: string, module = "pos") =>
+    apiFetch<void>(`/ordenes/${id}`, { method: "DELETE", module }),
+  setEstado: (id: string, estado: Orden["estado"], module = "pos") =>
+    apiFetch<{ ok: boolean }>(`/ordenes/${id}/estado`, {
+      method: "PATCH",
+      body: JSON.stringify({ estado }),
+      module,
+    }),
+  // El backend devuelve la orden completa con totales recalculados
+  addItem: (ordenId: string, item: CreateOrdenItemRequest, module = "pos") =>
+    apiFetch<Orden>(`/ordenes/${ordenId}/items`, {
+      method: "POST",
+      body: JSON.stringify(item),
+      module,
+    }),
+  updateItem: (ordenId: string, itemId: number | string, data: { cantidad: number; notas?: string | null }, module = "pos") =>
+    apiFetch<Orden>(`/ordenes/${ordenId}/items/${itemId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+      module,
+    }),
+  removeItem: (ordenId: string, itemId: number | string, module = "pos") =>
+    apiFetch<{ ok: boolean }>(`/ordenes/${ordenId}/items/${itemId}`, { method: "DELETE", module }),
+  setItemEstado: (
+    ordenId: string,
+    itemId: number | string,
+    estado: OrdenItem["estado"],
+    module = "pos"
+  ) =>
+    apiFetch<{ ok: boolean }>(`/ordenes/${ordenId}/items/${itemId}/estado`, {
+      method: "PATCH",
+      body: JSON.stringify({ estado }),
+      module,
+    }),
+}
+
+// ─── Cocina ──────────────────────────────────────────────────────────────────
+
+export interface CocinaOrden {
+  id: string
+  mesaId?: string
+  numeroMesa?: number
+  meseroNombre?: string
+  tipoServicio: string
+  items: {
+    id: string
+    platilloNombre: string
+    nombre?: string          // alias que algunos endpoints devuelven en lugar de platilloNombre
+    cantidad: number
+    notas?: string
+    estado: "pendiente" | "en_preparacion" | "listo"
+  }[]
+  creadoEn: string
+  estado: "abierta" | "en_cocina" | "lista"
+}
+
+export const cocina = {
+  getOrdenes: () => apiFetch<CocinaOrden[]>("/cocina/ordenes"),
+  iniciar: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/cocina/ordenes/${id}/iniciar`, { method: "PATCH" }),
+  listo: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/cocina/ordenes/${id}/listo`, { method: "PATCH" }),
+  reiniciar: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/cocina/ordenes/${id}/reiniciar`, { method: "PATCH" }),
+  // KDS por platillo: persiste el estado de cada item en backend
+  setItemEstado: (ordenId: string, itemId: number | string, estado: "pendiente" | "en_preparacion" | "listo") =>
+    apiFetch<{ ok: boolean }>(`/cocina/ordenes/${ordenId}/items/${itemId}/estado`, {
+      method: "PATCH",
+      body: JSON.stringify({ estado }),
+    }),
+}
+
+// ─── Pagos ───────────────────────────────────────────────────────────────────
+
+export interface PagoTender {
+  // Claves de metodos_pago en BD: "cash" | "card" | "transfer"
+  metodo: "cash" | "card" | "transfer" | string
+  monto: number
+  referenciaLote?: string | null
+  referenciaTransf?: string | null
+}
+
+export interface Pago {
+  id: string
+  ordenId: string
+  turnoId: string
+  meseroId?: string
+  meseroNombre?: string
+  montoTotal: number
+  facturado: boolean
+  registradoEn: string
+  tenders: PagoTender[]
+}
+
+export interface CreatePagoRequest {
+  ordenId?: string
+  turnoId: string
+  meseroId?: string
+  tenders: PagoTender[]
+}
+
+export const pagos = {
+  getAll: (module = "billing") =>
+    apiFetch<Pago[]>("/pagos", { module }),
+  getOne: (id: string, module = "billing") =>
+    apiFetch<Pago>(`/pagos/${id}`, { module }),
+  create: (data: CreatePagoRequest, module = "pos") =>
+    apiFetch<Pago>("/pagos", { method: "POST", body: JSON.stringify(data), module }),
+  setFacturado: (id: string, facturado: boolean, module = "billing") =>
+    apiFetch<Pago>(`/pagos/${id}/facturado`, {
+      method: "PATCH",
+      body: JSON.stringify({ facturado }),
+      module,
+    }),
+}
+
+// ─── Usuarios ─────────────────────────────────────────────────────────────────
+
+export interface Usuario {
+  id: string
+  nombre: string
+  username: string
+  rol: "admin" | "cajero" | "mesero" | "cocina"
+  activo: boolean
+  modules: string[]
+  creadoEn: string
+}
+
+export interface CreateUsuarioRequest {
+  nombre: string
+  username: string
+  pin: string
+  rol: Usuario["rol"]
+  modules: string[]
+}
+
+export const usuarios = {
+  getAll: (module = "admin") =>
+    apiFetch<Usuario[]>("/usuarios", { module }),
+  getOne: (id: string, module = "admin") =>
+    apiFetch<Usuario>(`/usuarios/${id}`, { module }),
+  create: (data: CreateUsuarioRequest, module = "admin") =>
+    apiFetch<Usuario>("/usuarios", { method: "POST", body: JSON.stringify(data), module }),
+  update: (id: string, data: Partial<CreateUsuarioRequest> & { activo?: boolean }, module = "admin") =>
+    apiFetch<Usuario>(`/usuarios/${id}`, { method: "PUT", body: JSON.stringify(data), module }),
+  remove: (id: string, module = "admin") =>
+    apiFetch<void>(`/usuarios/${id}`, { method: "DELETE", module }),
+}
+
+// ─── Configuración ────────────────────────────────────────────────────────────
+
+export interface ConfigNegocio {
+  nombre: string
+  rfc?: string | null
+  direccion?: string | null
+  telefono?: string | null
+  email?: string | null
+  logo?: string | null
+  ticketHeader?: string | null
+  ticketFooter?: string | null
+  moneda: string
+  zonaHoraria: string
+}
+
+export interface ConfigImpuestos {
+  ivaActivo: boolean
+  ivaPorcentaje: number
+  iepsTabaco: number
+  iepsBebidas: number
+  preciosConIva: boolean
+  propinaActiva?: boolean
+  propinaSugerida?: number
+  cargoServicioActivo?: boolean
+  cargoServicioPorcentaje?: number
+}
+
+export interface MetodoPago {
+  id: string
+  nombre: string
+  clave: string
+  activo: boolean
+  requiereReferencia: boolean
+}
+
+export interface CreateMetodoPagoRequest {
+  nombre: string
+  activo?: boolean
+  requiereReferencia?: boolean
+}
+
+export interface UpdateMetodoPagoRequest {
+  nombre?: string
+  activo?: boolean
+  requiereReferencia?: boolean
+}
+
+export interface VerificarPinResponse {
+  ok: boolean
+  usuario?: { id: string; nombre: string; rol: string }
+}
+
+export interface ComandaItem {
+  id: string
+  nombre: string
+  categoria?: string
+  cantidad: number
+  precioUnitario: number
+}
+
+export interface ComandaAdmin {
+  id: string
+  fecha: string
+  mesaNumero?: number
+  meseroNombre?: string
+  cajeroNombre?: string
+  metodoPago?: string
+  subtotal: number
+  impuesto: number
+  descuento: number
+  propina: number
+  total: number
+  notas?: string
+  anulada: boolean
+  items: ComandaItem[]
+}
+
+export interface ComandaTicketResponse {
+  id: string
+  fecha: string
+  mesaNumero?: number
+  meseroNombre?: string
+  cajeroNombre?: string
+  metodoPago?: string
+  subtotal: number
+  impuesto: number
+  descuento: number
+  propina: number
+  total: number
+  notas?: string
+  anulada: boolean
+  items: ComandaItem[]
+}
+
+export const config = {
+  getNegocio: (module = "admin") =>
+    apiFetch<ConfigNegocio>("/config/negocio", { module }),
+  updateNegocio: (data: Partial<ConfigNegocio>, module = "admin") =>
+    apiFetch<ConfigNegocio>("/config/negocio", { method: "PUT", body: JSON.stringify(data), module }),
+  getImpuestos: (module = "admin") =>
+    apiFetch<ConfigImpuestos>("/config/impuestos", { module }),
+  updateImpuestos: (data: Partial<ConfigImpuestos>, module = "admin") =>
+    apiFetch<ConfigImpuestos>("/config/impuestos", { method: "PUT", body: JSON.stringify(data), module }),
+  getMetodosPago: (module = "admin") =>
+    apiFetch<MetodoPago[]>("/config/metodos-pago", { module }),
+  createMetodoPago: (data: CreateMetodoPagoRequest, module = "admin") =>
+    apiFetch<MetodoPago>("/config/metodos-pago", {
+      method: "POST",
+      body: JSON.stringify(data),
+      module,
+    }),
+  updateMetodoPago: (id: string, data: UpdateMetodoPagoRequest, module = "admin") =>
+    apiFetch<MetodoPago>(`/config/metodos-pago/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+      module,
+    }),
+  deleteMetodoPago: (id: string, module = "admin") =>
+    apiFetch<void>(`/config/metodos-pago/${id}`, {
+      method: "DELETE",
+      module,
+    }),
+  verificarPin: (pin: string, module = "pos") =>
+    apiFetch<VerificarPinResponse>("/config/verificar-pin", {
+      method: "POST",
+      body: JSON.stringify({ pin }),
+      module,
+    }),
+  getComandas: (
+    params?: {
+      desde?: string
+      hasta?: string
+      mesa?: string
+      mesero?: string
+      metodo?: string
+      estado?: string
+      pagina?: number
+      porPagina?: number
+    },
+    module = "admin"
+  ) => {
+    const p = new URLSearchParams()
+    if (params?.desde) p.set("desde", params.desde)
+    if (params?.hasta) p.set("hasta", params.hasta)
+    if (params?.mesa) p.set("mesa", params.mesa)
+    if (params?.mesero) p.set("mesero", params.mesero)
+    if (params?.metodo) p.set("metodo", params.metodo)
+    if (params?.estado) p.set("estado", params.estado)
+    if (params?.pagina) p.set("pagina", String(params.pagina))
+    if (params?.porPagina) p.set("porPagina", String(params.porPagina))
+    const q = p.toString()
+    return apiFetch<ComandaAdmin[]>(`/config/comandas${q ? `?${q}` : ""}`, { module })
+  },
+  getComanda: (id: string, module = "admin") =>
+    apiFetch<ComandaAdmin>(`/config/comandas/${id}`, { module }),
+  updateComanda: (
+    id: string,
+    data: { descuento?: number; propina?: number; notas?: string },
+    module = "admin"
+  ) =>
+    apiFetch<ComandaAdmin>(`/config/comandas/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+      module,
+    }),
+  anularComanda: (id: string, motivo: string, module = "admin") =>
+    apiFetch<ComandaAdmin>(`/config/comandas/${id}/anular`, {
+      method: "PATCH",
+      body: JSON.stringify({ motivo }),
+      module,
+    }),
+  deleteComanda: (id: string, module = "admin") =>
+    apiFetch<void>(`/config/comandas/${id}`, {
+      method: "DELETE",
+      module,
+    }),
+  getComandaTicket: (id: string, module = "admin") =>
+    apiFetch<ComandaTicketResponse>(`/config/comandas/${id}/ticket`, { module }),
+}
+
+// ─── Insumos (Inventario) ────────────────────────────────────────────────────
+
+export interface Insumo {
+  id: string
+  nombre: string
+  unidad: "kg" | "g" | "L" | "mL" | "pza" | "caja"
+  stockActual: number
+  stockMinimo: number
+  costoUnitario: number
+  categoriaId?: string | null
+  categoriaNombre?: string | null
+  proveedor?: string | null
+  activo: boolean
+  notas?: string | null
+  actualizadoEn: string
+}
+
+export interface CreateInsumoRequest {
+  nombre: string
+  unidad: Insumo["unidad"]
+  stockActual: number
+  stockMinimo: number
+  costoUnitario: number
+  categoriaId?: string | null
+  proveedor?: string | null
+  notas?: string | null
+}
+
+export interface AjusteStockRequest {
+  tipo: "entrada" | "salida"
+  cantidad: number
+  motivo: string
+}
+
+export const insumos = {
+  getAll: (module = "inventory") =>
+    apiFetch<Insumo[]>("/insumos", { module }),
+  getOne: (id: string, module = "inventory") =>
+    apiFetch<Insumo>(`/insumos/${id}`, { module }),
+  create: (data: CreateInsumoRequest, module = "admin") =>
+    apiFetch<Insumo>("/insumos", { method: "POST", body: JSON.stringify(data), module }),
+  update: (id: string, data: Partial<CreateInsumoRequest> & { activo?: boolean }, module = "admin") =>
+    apiFetch<Insumo>(`/insumos/${id}`, { method: "PUT", body: JSON.stringify(data), module }),
+  remove: (id: string, module = "admin") =>
+    apiFetch<void>(`/insumos/${id}`, { method: "DELETE", module }),
+  ajustarStock: (id: string, data: AjusteStockRequest, module = "inventory") =>
+    apiFetch<Insumo>(`/insumos/${id}/ajuste`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+      module,
+    }),
+}
+
+// ─── Insumos Movimientos ──────────────────────────────────────────────────────
+
+export interface InsumoMovimiento {
+  id: number
+  insumoId: string
+  insumoNombre?: string
+  tipo: "entrada" | "salida" | "ajuste" | "merma"
+  cantidad: number
+  costoPorUnidad?: number | null
+  motivo: string
+  usuarioId?: string | null
+  ordenId?: string | null
+  registradoEn: string
+}
+
+export interface CreateMovimientoRequest {
+  tipo: "entrada" | "salida" | "ajuste" | "merma"
+  insumoId: string
+  cantidad: number
+  motivo: string
+  costoPorUnidad?: number | null
+  ordenId?: string | null
+}
+
+export const movimientos = {
+  getAll: (params: { insumoId?: string; tipo?: string; desde?: string; hasta?: string; limit?: number } = {}, module = "inventory") => {
+    const q = new URLSearchParams()
+    if (params.insumoId) q.set("insumo_id", params.insumoId)
+    if (params.tipo) q.set("tipo", params.tipo)
+    if (params.desde) q.set("desde", params.desde)
+    if (params.hasta) q.set("hasta", params.hasta)
+    if (params.limit) q.set("limit", String(params.limit))
+    const qs = q.toString()
+    return apiFetch<InsumoMovimiento[]>(`/insumos/movimientos${qs ? `?${qs}` : ""}`, { module })
+  },
+  create: (data: CreateMovimientoRequest, module = "inventory") =>
+    apiFetch<InsumoMovimiento>("/insumos/movimientos", { method: "POST", body: JSON.stringify(data), module }),
+}
+
+// ─── Recetas ─────────────────────────────────────────────────────────────────
+
+export interface RecetaIngrediente {
+  insumoId: string
+  insumoNombre: string
+  unidad: string
+  cantidad: number
+}
+
+export interface Receta {
+  id?: string
+  platilloId: string
+  platilloNombre: string
+  ingredientes: RecetaIngrediente[]
+}
+
+export const recetas = {
+  getAll: (module = "inventory") =>
+    apiFetch<Receta[]>("/recetas", { module }),
+  getOne: (platilloId: string, module = "inventory") =>
+    apiFetch<Receta>(`/recetas/${platilloId}`, { module }),
+  update: (
+    platilloId: string,
+    ingredientes: { insumoId: string; cantidad: number }[],
+    module = "admin"
+  ) =>
+    apiFetch<Receta>(`/recetas/${platilloId}`, {
+      method: "PUT",
+      body: JSON.stringify({ ingredientes }),
+      module,
+    }),
+  remove: (platilloId: string, module = "admin") =>
+    apiFetch<void>(`/recetas/${platilloId}`, { method: "DELETE", module }),
+}
+
+// ─── Reportes ─────────────────────────────────────────────────────────────────
+
+export interface ReporteVentas {
+  desde: string
+  hasta: string
+  totalVentas: number
+  totalOrdenes: number
+  ticketPromedio: number
+  porMetodoPago: Record<string, number>
+  porDia: { fecha: string; total: number; ordenes: number }[]
+}
+
+export interface ReportePlatillos {
+  desde: string
+  hasta: string
+  platillos: {
+    platilloId: string
+    nombre: string
+    cantidadVendida: number
+    totalGenerado: number
+    porcentajeSobreTotal: number
+  }[]
+}
+
+export interface ReporteMeseros {
+  desde: string
+  hasta: string
+  meseros: {
+    usuarioId: string
+    nombre: string
+    ordenes: number
+    totalVentas: number
+  }[]
+}
+
+function dateParams(desde?: string, hasta?: string): string {
+  const p = new URLSearchParams()
+  if (desde) p.set("desde", desde)
+  if (hasta) p.set("hasta", hasta)
+  const s = p.toString()
+  return s ? `?${s}` : ""
+}
+
+export const reportes = {
+  ventas: (desde?: string, hasta?: string, module = "reports") =>
+    apiFetch<ReporteVentas>(`/reportes/ventas${dateParams(desde, hasta)}`, { module }),
+  platillos: (desde?: string, hasta?: string, module = "reports") =>
+    apiFetch<ReportePlatillos>(`/reportes/platillos${dateParams(desde, hasta)}`, { module }),
+  corteCaja: (turnoId?: string, module = "reports") => {
+    const q = turnoId ? `?turnoId=${turnoId}` : ""
+    return apiFetch<CorteInfo>(`/reportes/corte-caja${q}`, { module })
+  },
+  meseros: (desde?: string, hasta?: string, module = "reports") =>
+    apiFetch<ReporteMeseros>(`/reportes/meseros${dateParams(desde, hasta)}`, { module }),
+}
+
+// ─── Facturas ─────────────────────────────────────────────────────────────────
+
+export interface Factura {
+  id: string
+  pagoId: string
+  folio: string
+  clienteNombre?: string | null
+  clienteRfc?: string | null
+  subtotal: number
+  impuestos: number
+  total: number
+  fechaEmision: string
+  cancelada: boolean
+}
+
+export interface FacturasListResponse {
+  total: number
+  pagina: number
+  porPagina: number
+  datos: Factura[]
+}
+
+export interface CreateFacturaRequest {
+  pagoId: string
+  clienteNombre?: string
+  clienteRfc?: string
+  usoCfdi?: string | null
+}
+
+export const facturas = {
+  getAll: (
+    params?: { desde?: string; hasta?: string; pagina?: number; porPagina?: number },
+    module = "billing"
+  ) => {
+    const p = new URLSearchParams()
+    if (params?.desde) p.set("desde", params.desde)
+    if (params?.hasta) p.set("hasta", params.hasta)
+    if (params?.pagina) p.set("pagina", String(params.pagina))
+    if (params?.porPagina) p.set("porPagina", String(params.porPagina))
+    const q = p.toString()
+    return apiFetch<FacturasListResponse>(`/facturas${q ? `?${q}` : ""}`, { module })
+  },
+  getOne: (id: string, module = "billing") =>
+    apiFetch<Factura>(`/facturas/${id}`, { module }),
+  create: (data: CreateFacturaRequest, module = "billing") =>
+    apiFetch<Factura>("/facturas", { method: "POST", body: JSON.stringify(data), module }),
+  cancelar: (id: string, motivo: string, module = "admin") =>
+    apiFetch<Factura>(`/facturas/${id}/cancelar`, {
+      method: "PATCH",
+      body: JSON.stringify({ motivo }),
+      module,
+    }),
+}
+
+// ─── Auditoría ────────────────────────────────────────────────────────────────
+
+export interface AuditoriaEntry {
+  id: number
+  usuarioId: string
+  usuarioNombre: string
+  accion: string
+  descripcion: string
+  ip?: string | null
+  creadoEn: string
+}
+
+export interface AuditoriaResponse {
+  total: number
+  datos: AuditoriaEntry[]
+}
+
+export const auditoria = {
+  getAll: (
+    params?: {
+      desde?: string
+      hasta?: string
+      usuarioId?: string
+      accion?: string
+      pagina?: number
+      porPagina?: number
+    },
+    module = "admin"
+  ) => {
+    const p = new URLSearchParams()
+    if (params?.desde) p.set("desde", params.desde)
+    if (params?.hasta) p.set("hasta", params.hasta)
+    if (params?.usuarioId) p.set("usuarioId", params.usuarioId)
+    if (params?.accion) p.set("accion", params.accion)
+    if (params?.pagina) p.set("pagina", String(params.pagina))
+    if (params?.porPagina) p.set("porPagina", String(params.porPagina))
+    const q = p.toString()
+    return apiFetch<AuditoriaResponse>(`/auditoria${q ? `?${q}` : ""}`, { module })
+  },
+}

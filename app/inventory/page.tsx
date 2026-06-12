@@ -1,7 +1,12 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
+import {
+  getSession, clearSession, type AuthUser,
+  insumos, recetas, platillos as platillosApi, movimientos,
+  type Insumo,
+} from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -53,16 +58,6 @@ import { toast } from "@/hooks/use-toast"
 
 type UnitOfMeasure = "kg" | "g" | "lt" | "ml" | "pz" | "caja" | "bolsa" | "lata"
 
-interface Supplier {
-  id: string
-  name: string
-  contact: string
-  phone: string
-  email: string
-  notes: string
-  active: boolean
-}
-
 interface Ingredient {
   id: string
   name: string
@@ -71,7 +66,7 @@ interface Ingredient {
   stock: number
   minStock: number
   costPerUnit: number
-  supplierId: string
+  proveedor: string
   notes: string
   active: boolean
 }
@@ -80,6 +75,7 @@ interface MenuItemDef {
   id: string
   name: string
   category: string
+  categoryId?: string
   salePrice: number
   active: boolean
   notes: string
@@ -110,31 +106,69 @@ interface StockMovement {
   costPerUnit?: number
 }
 
+const INVENTORY_MOVEMENTS_KEY = "inventory_movements_v1"
+
+const mapApiMovement = (m: {
+  id: number
+  registradoEn: string
+  tipo: string
+  insumoId: string
+  cantidad: number
+  motivo: string
+  usuarioId?: string | null
+  costoPorUnidad?: number | null
+}): StockMovement => ({
+  id: String(m.id),
+  date: m.registradoEn,
+  type: m.tipo as MovementType,
+  ingredientId: m.insumoId,
+  quantity: m.cantidad,
+  reason: m.motivo,
+  userId: m.usuarioId ?? "sistema",
+  costPerUnit: m.costoPorUnidad ?? undefined,
+})
+
+const loadStoredMovements = (): StockMovement[] => {
+  if (typeof window === "undefined") return []
+  try {
+    const raw = localStorage.getItem(INVENTORY_MOVEMENTS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as StockMovement[]) : []
+  } catch {
+    return []
+  }
+}
+
+const saveStoredMovements = (list: StockMovement[]) => {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.setItem(INVENTORY_MOVEMENTS_KEY, JSON.stringify(list.slice(0, 400)))
+  } catch {
+    // Ignore storage errors to avoid blocking inventory workflow.
+  }
+}
+
+// ─── Unit helpers ──────────────────────────────────────────────────────────────
+const toApiUnit = (u: UnitOfMeasure): Insumo["unidad"] => {
+  if (u === "lt") return "L"
+  if (u === "ml") return "mL"
+  if (u === "pz" || u === "bolsa" || u === "lata") return "pza"
+  return u as Insumo["unidad"]
+}
+const fromApiUnit = (u: string): UnitOfMeasure => {
+  if (u === "L") return "lt"
+  if (u === "mL") return "ml"
+  if (u === "pza") return "pz"
+  return u as UnitOfMeasure
+}
+
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
-const seedSuppliers: Supplier[] = [
-  { id: "s1", name: "Carnes Selectas SA", contact: "Juan Pérez", phone: "555-1001", email: "juan@carne.mx", notes: "Entrega lunes y jueves", active: true },
-  { id: "s2", name: "Lácteos Del Valle", contact: "María López", phone: "555-2002", email: "maria@lacteos.mx", notes: "", active: true },
-  { id: "s3", name: "Verduras Frescas MX", contact: "Carlos Ruiz", phone: "555-3003", email: "carlos@verduras.mx", notes: "Solo pago contado", active: true },
-  { id: "s4", name: "Distribuidora Bebidas", contact: "Rosa Torres", phone: "555-4004", email: "rosa@bebidas.mx", notes: "", active: true },
-]
-
 const seedIngredients: Ingredient[] = [
-  { id: "i1", name: "Carne molida", category: "Carnes", unit: "kg", stock: 8, minStock: 5, costPerUnit: 120, supplierId: "s1", notes: "", active: true },
-  { id: "i2", name: "Pan de hamburguesa", category: "Panadería", unit: "pz", stock: 60, minStock: 20, costPerUnit: 4.5, supplierId: "s3", notes: "", active: true },
-  { id: "i3", name: "Queso amarillo", category: "Lácteos", unit: "kg", stock: 2, minStock: 3, costPerUnit: 90, supplierId: "s2", notes: "", active: true },
-  { id: "i4", name: "Lechuga", category: "Verduras", unit: "kg", stock: 3, minStock: 2, costPerUnit: 18, supplierId: "s3", notes: "", active: true },
-  { id: "i5", name: "Jitomate", category: "Verduras", unit: "kg", stock: 4, minStock: 2, costPerUnit: 22, supplierId: "s3", notes: "", active: true },
-  { id: "i6", name: "Masa para pizza", category: "Panadería", unit: "pz", stock: 15, minStock: 8, costPerUnit: 25, supplierId: "s3", notes: "", active: true },
-  { id: "i7", name: "Salsa de tomate", category: "Condimentos", unit: "lt", stock: 5, minStock: 3, costPerUnit: 35, supplierId: "s3", notes: "", active: true },
-  { id: "i8", name: "Pechuga de pollo", category: "Carnes", unit: "kg", stock: 6, minStock: 4, costPerUnit: 95, supplierId: "s1", notes: "", active: true },
-  { id: "i9", name: "Alitas de pollo", category: "Carnes", unit: "kg", stock: 7, minStock: 5, costPerUnit: 80, supplierId: "s1", notes: "", active: true },
-  { id: "i10", name: "Coca Cola 600ml", category: "Bebidas", unit: "pz", stock: 48, minStock: 20, costPerUnit: 12, supplierId: "s4", notes: "", active: true },
-  { id: "i11", name: "Agua mineral", category: "Bebidas", unit: "pz", stock: 36, minStock: 15, costPerUnit: 8, supplierId: "s4", notes: "", active: true },
-  { id: "i12", name: "Cerveza 355ml", category: "Bebidas", unit: "pz", stock: 60, minStock: 24, costPerUnit: 18, supplierId: "s4", notes: "", active: true },
-  { id: "i13", name: "Mezcla p/ tiramisú", category: "Postres", unit: "kg", stock: 4, minStock: 2, costPerUnit: 55, supplierId: "s2", notes: "", active: true },
-  { id: "i14", name: "Helado (cubo 4lt)", category: "Postres", unit: "pz", stock: 3, minStock: 2, costPerUnit: 120, supplierId: "s2", notes: "", active: true },
-  { id: "i15", name: "Tocino", category: "Carnes", unit: "kg", stock: 2, minStock: 1, costPerUnit: 110, supplierId: "s1", notes: "", active: true },
+  { id: "i1", name: "Carne molida", category: "Carnes", unit: "kg", stock: 8, minStock: 5, costPerUnit: 120, proveedor: "", notes: "", active: true },
+  { id: "i2", name: "Pan de hamburguesa", category: "Panadería", unit: "pz", stock: 60, minStock: 20, costPerUnit: 4.5, proveedor: "", notes: "", active: true },
+  { id: "i3", name: "Queso amarillo", category: "Lácteos", unit: "kg", stock: 2, minStock: 3, costPerUnit: 90, proveedor: "", notes: "", active: true },
 ]
 
 const seedMenuItems: MenuItemDef[] = [
@@ -173,55 +207,88 @@ const movementTypes: { value: MovementType; label: string }[] = [
 ]
 
 // ─── Blank helpers ─────────────────────────────────────────────────────────────
-const blankSupplier = (): Omit<Supplier, "id"> => ({ name: "", contact: "", phone: "", email: "", notes: "", active: true })
-const blankIngredient = (): Omit<Ingredient, "id"> => ({ name: "", category: "Carnes", unit: "kg", stock: 0, minStock: 0, costPerUnit: 0, supplierId: "", notes: "", active: true })
+const blankIngredient = (): Omit<Ingredient, "id"> => ({ name: "", category: "Carnes", unit: "kg", stock: 0, minStock: 0, costPerUnit: 0, proveedor: "", notes: "", active: true })
 const blankMenuItem = (): Omit<MenuItemDef, "id"> => ({ name: "", category: "Platos Principales", salePrice: 0, active: true, notes: "" })
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
   const router = useRouter()
-  const [user, setUser] = useState<{ username: string; module: string } | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [ingredients, setIngredients] = useState<Ingredient[]>([])
+  const [menuItems, setMenuItems] = useState<MenuItemDef[]>([])
+  const [recipes, setRecipes] = useState<Recipe[]>([])
+  const [movements, setMovements] = useState<StockMovement[]>([])
+
+  const refreshMovements = () => {
+    const storedMovements = loadStoredMovements()
+    if (storedMovements.length) setMovements(storedMovements)
+
+    movimientos.getAll({ limit: 200 }, "inventory").then(list => {
+      const apiMapped = list.map(mapApiMovement)
+      const apiIds = new Set(apiMapped.map(m => m.id))
+      const merged = [...apiMapped, ...storedMovements.filter(m => !apiIds.has(m.id))]
+      setMovements(merged)
+      saveStoredMovements(merged)
+    }).catch(() => {
+      setMovements(storedMovements)
+    })
+  }
 
   useEffect(() => {
-    const sessionStr = localStorage.getItem("module_session_inventory")
-    if (!sessionStr) { router.push("/inventory/login"); return }
-    setUser(JSON.parse(sessionStr))
+    const session = getSession("inventory")
+    if (!session) { router.push("/inventory/login"); return }
+    setUser(session.user)
   }, [router])
 
+  useEffect(() => {
+    if (!user) return
+
+    insumos.getAll("inventory").then(list =>
+      setIngredients(list.map(i => ({
+        id: i.id,
+        name: i.nombre,
+        category: i.categoriaNombre ?? "Otros",
+        unit: fromApiUnit(i.unidad),
+        stock: i.stockActual,
+        minStock: i.stockMinimo,
+        costPerUnit: i.costoUnitario,
+        proveedor: i.proveedor ?? "",
+        notes: "",
+        active: i.activo,
+      })))
+    ).catch(e => toast({ title: "Error al cargar insumos", description: String(e), variant: "destructive" }))
+
+    platillosApi.getAll("inventory").then(list =>
+      setMenuItems(list.map(p => ({
+        id: p.id,
+        name: p.nombre,
+        category: p.categoriaNombre ?? "",
+        categoryId: p.categoriaId,
+        salePrice: p.precio,
+        active: p.disponible,
+        notes: "",
+      })))
+    ).catch(e => toast({ title: "Error al cargar platillos", description: String(e), variant: "destructive" }))
+
+    recetas.getAll("inventory").then(list =>
+      setRecipes(list.map(r => ({
+        id: r.platilloId,
+        menuItemId: r.platilloId,
+        lines: r.ingredientes.map(i => ({ ingredientId: i.insumoId, quantity: i.cantidad })),
+        notes: "",
+      })))
+    ).catch(e => toast({ title: "Error al cargar recetas", description: String(e), variant: "destructive" }))
+
+    refreshMovements()
+  }, [user])
+
   const logout = () => {
-    localStorage.removeItem("module_session_inventory")
+    clearSession("inventory")
     router.push("/inventory/login")
   }
 
-  // ── State ──────────────────────────────────────────────────────────────────
-  const [suppliers, setSuppliers] = useState<Supplier[]>(seedSuppliers)
-  const [ingredients, setIngredients] = useState<Ingredient[]>(seedIngredients)
-  const [menuItems, setMenuItems] = useState<MenuItemDef[]>(seedMenuItems)
-  const [recipes, setRecipes] = useState<Recipe[]>(seedRecipes)
-  const [movements, setMovements] = useState<StockMovement[]>([])
-
   const [activeTab, setActiveTab] = useState("dashboard")
   const [search, setSearch] = useState("")
-
-  // ── Supplier dialog ────────────────────────────────────────────────────────
-  const [showSupplierDialog, setShowSupplierDialog] = useState(false)
-  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
-  const [supplierForm, setSupplierForm] = useState(blankSupplier())
-
-  const openNewSupplier = () => { setEditingSupplier(null); setSupplierForm(blankSupplier()); setShowSupplierDialog(true) }
-  const openEditSupplier = (s: Supplier) => { setEditingSupplier(s); setSupplierForm({ name: s.name, contact: s.contact, phone: s.phone, email: s.email, notes: s.notes, active: s.active }); setShowSupplierDialog(true) }
-  const saveSupplier = () => {
-    if (!supplierForm.name.trim()) { toast({ title: "El nombre es requerido" }); return }
-    if (editingSupplier) {
-      setSuppliers(prev => prev.map(s => s.id === editingSupplier.id ? { ...s, ...supplierForm } : s))
-      toast({ title: "Proveedor actualizado" })
-    } else {
-      setSuppliers(prev => [...prev, { id: `s-${Date.now()}`, ...supplierForm }])
-      toast({ title: "Proveedor creado" })
-    }
-    setShowSupplierDialog(false)
-  }
-  const deleteSupplier = (id: string) => { setSuppliers(prev => prev.filter(s => s.id !== id)); toast({ title: "Proveedor eliminado" }) }
 
   // ── Ingredient dialog ──────────────────────────────────────────────────────
   const [showIngredientDialog, setShowIngredientDialog] = useState(false)
@@ -231,21 +298,31 @@ export default function InventoryPage() {
   const openNewIngredient = () => { setEditingIngredient(null); setIngredientForm(blankIngredient()); setShowIngredientDialog(true) }
   const openEditIngredient = (i: Ingredient) => {
     setEditingIngredient(i)
-    setIngredientForm({ name: i.name, category: i.category, unit: i.unit, stock: i.stock, minStock: i.minStock, costPerUnit: i.costPerUnit, supplierId: i.supplierId, notes: i.notes, active: i.active })
+    setIngredientForm({ name: i.name, category: i.category, unit: i.unit, stock: i.stock, minStock: i.minStock, costPerUnit: i.costPerUnit, proveedor: i.proveedor, notes: i.notes, active: i.active })
     setShowIngredientDialog(true)
   }
   const saveIngredient = () => {
     if (!ingredientForm.name.trim()) { toast({ title: "El nombre es requerido" }); return }
     if (editingIngredient) {
-      setIngredients(prev => prev.map(i => i.id === editingIngredient.id ? { ...i, ...ingredientForm } : i))
-      toast({ title: "Insumo actualizado" })
+      insumos.update(editingIngredient.id, { nombre: ingredientForm.name, unidad: toApiUnit(ingredientForm.unit), stockActual: ingredientForm.stock, stockMinimo: ingredientForm.minStock, costoUnitario: ingredientForm.costPerUnit, proveedor: ingredientForm.proveedor || null }, "inventory").then(() => {
+        setIngredients(prev => prev.map(i => i.id === editingIngredient.id ? { ...i, ...ingredientForm } : i))
+        toast({ title: "Insumo actualizado" })
+        setShowIngredientDialog(false)
+      }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
     } else {
-      setIngredients(prev => [...prev, { id: `i-${Date.now()}`, ...ingredientForm }])
-      toast({ title: "Insumo creado" })
+      insumos.create({ nombre: ingredientForm.name, unidad: toApiUnit(ingredientForm.unit), stockActual: ingredientForm.stock, stockMinimo: ingredientForm.minStock, costoUnitario: ingredientForm.costPerUnit, proveedor: ingredientForm.proveedor || null }, "inventory").then(created => {
+        setIngredients(prev => [...prev, { ...ingredientForm, id: created.id }])
+        toast({ title: "Insumo creado" })
+        setShowIngredientDialog(false)
+      }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
     }
-    setShowIngredientDialog(false)
   }
-  const deleteIngredient = (id: string) => { setIngredients(prev => prev.filter(i => i.id !== id)); toast({ title: "Insumo eliminado" }) }
+  const deleteIngredient = (id: string) => {
+    insumos.remove(id, "inventory").then(() => {
+      setIngredients(prev => prev.filter(i => i.id !== id))
+      toast({ title: "Insumo eliminado" })
+    }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
+  }
 
   // ── Menu item dialog ───────────────────────────────────────────────────────
   const [showMenuDialog, setShowMenuDialog] = useState(false)
@@ -261,18 +338,24 @@ export default function InventoryPage() {
   const saveMenuItem = () => {
     if (!menuForm.name.trim()) { toast({ title: "El nombre es requerido" }); return }
     if (editingMenuItem) {
-      setMenuItems(prev => prev.map(m => m.id === editingMenuItem.id ? { ...m, ...menuForm } : m))
-      toast({ title: "Platillo actualizado" })
+      const catId = editingMenuItem.categoryId
+      const payload: Record<string, unknown> = { nombre: menuForm.name, precio: menuForm.salePrice, disponible: menuForm.active }
+      if (catId) payload.categoriaId = catId
+      platillosApi.update(editingMenuItem.id, payload).then(() => {
+        setMenuItems(prev => prev.map(m => m.id === editingMenuItem.id ? { ...m, ...menuForm, categoryId: editingMenuItem.categoryId } : m))
+        toast({ title: "Platillo actualizado" })
+        setShowMenuDialog(false)
+      }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
     } else {
-      setMenuItems(prev => [...prev, { id: `m-${Date.now()}`, ...menuForm }])
-      toast({ title: "Platillo creado" })
+      toast({ title: "Crea platillos desde el módulo de Administración" })
     }
-    setShowMenuDialog(false)
   }
   const deleteMenuItem = (id: string) => {
-    setMenuItems(prev => prev.filter(m => m.id !== id))
-    setRecipes(prev => prev.filter(r => r.menuItemId !== id))
-    toast({ title: "Platillo eliminado", description: "La receta asociada también fue eliminada." })
+    platillosApi.remove(id).then(() => {
+      setMenuItems(prev => prev.filter(m => m.id !== id))
+      setRecipes(prev => prev.filter(r => r.menuItemId !== id))
+      toast({ title: "Platillo eliminado", description: "La receta asociada también fue eliminada." })
+    }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
   }
 
   // ── Recipe dialog ──────────────────────────────────────────────────────────
@@ -299,17 +382,24 @@ export default function InventoryPage() {
   const saveRecipe = () => {
     const validLines = recipeLines.filter(l => l.ingredientId && l.quantity > 0)
     if (validLines.length === 0) { toast({ title: "Agrega al menos un insumo con cantidad" }); return }
-    const recipe: Recipe = { id: editingRecipe?.id || `r-${Date.now()}`, menuItemId: recipeMenuItemId, lines: validLines, notes: recipeNotes }
-    if (editingRecipe) {
-      setRecipes(prev => prev.map(r => r.id === editingRecipe.id ? recipe : r))
-      toast({ title: "Receta actualizada" })
-    } else {
-      setRecipes(prev => [...prev, recipe])
-      toast({ title: "Receta creada" })
-    }
-    setShowRecipeDialog(false)
+    recetas.update(recipeMenuItemId, validLines.map(l => ({ insumoId: l.ingredientId, cantidad: l.quantity })), "inventory").then(() => {
+      const recipe: Recipe = { id: recipeMenuItemId, menuItemId: recipeMenuItemId, lines: validLines, notes: recipeNotes }
+      if (editingRecipe) {
+        setRecipes(prev => prev.map(r => r.menuItemId === recipeMenuItemId ? recipe : r))
+        toast({ title: "Receta actualizada" })
+      } else {
+        setRecipes(prev => [...prev, recipe])
+        toast({ title: "Receta creada" })
+      }
+      setShowRecipeDialog(false)
+    }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
   }
-  const deleteRecipe = (id: string) => { setRecipes(prev => prev.filter(r => r.id !== id)); toast({ title: "Receta eliminada" }) }
+  const deleteRecipe = (id: string) => {
+    recetas.remove(id, "inventory").then(() => {
+      setRecipes(prev => prev.filter(r => r.id !== id))
+      toast({ title: "Receta eliminada" })
+    }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
+  }
 
   // ── Movement dialog ────────────────────────────────────────────────────────
   const [showMovementDialog, setShowMovementDialog] = useState(false)
@@ -326,32 +416,43 @@ export default function InventoryPage() {
     if (!movementForm.ingredientId) { toast({ title: "Seleccione un insumo" }); return }
     if (movementForm.quantity <= 0) { toast({ title: "La cantidad debe ser mayor a 0" }); return }
     if (!movementForm.reason.trim()) { toast({ title: "Ingrese motivo o descripción" }); return }
-    const move: StockMovement = {
-      id: `mv-${Date.now()}`,
-      date: new Date().toISOString(),
-      type: movementForm.type,
-      ingredientId: movementForm.ingredientId,
-      quantity: movementForm.quantity,
-      reason: movementForm.reason,
-      userId: user?.username || "sistema",
-      costPerUnit: movementForm.type === "entrada" ? movementForm.costPerUnit : undefined,
+
+    const ing = ingredients.find(i => i.id === movementForm.ingredientId)
+    if (!ing) { toast({ title: "Insumo no encontrado" }); return }
+
+    let tipo: "entrada" | "salida"
+    let cantidad: number
+
+    if (movementForm.type === "entrada") {
+      tipo = "entrada"; cantidad = movementForm.quantity
+    } else if (movementForm.type === "ajuste") {
+      const delta = movementForm.quantity - ing.stock
+      if (delta === 0) { toast({ title: "Sin cambios" }); return }
+      tipo = delta > 0 ? "entrada" : "salida"
+      cantidad = Math.abs(delta)
+    } else {
+      tipo = "salida"; cantidad = movementForm.quantity
     }
-    setMovements(prev => [move, ...prev])
-    setIngredients(prev => prev.map(ing => {
-      if (ing.id !== movementForm.ingredientId) return ing
-      let delta = 0
-      if (movementForm.type === "entrada") delta = movementForm.quantity
-      else if (movementForm.type === "ajuste") delta = movementForm.quantity - ing.stock
-      else delta = -movementForm.quantity
-      const newCost = movementForm.type === "entrada" && movementForm.costPerUnit > 0 ? movementForm.costPerUnit : ing.costPerUnit
-      return { ...ing, stock: Math.max(0, ing.stock + delta), costPerUnit: newCost }
-    }))
-    toast({ title: "Movimiento registrado" })
-    setShowMovementDialog(false)
+
+    const motivo = movementForm.type === "merma" ? `[Merma] ${movementForm.reason}` : movementForm.type === "ajuste" ? `[Ajuste] ${movementForm.reason}` : movementForm.reason
+
+    insumos.ajustarStock(movementForm.ingredientId, { tipo, cantidad, motivo }, "inventory").then(updated => {
+      setIngredients(prev => prev.map(i => i.id === movementForm.ingredientId ? { ...i, stock: updated.stockActual } : i))
+      refreshMovements()
+      toast({ title: "Movimiento registrado" })
+      setShowMovementDialog(false)
+    }).catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
   }
 
   // ── Computed ───────────────────────────────────────────────────────────────
   const lowStockIngredients = useMemo(() => ingredients.filter(i => i.active && i.stock <= i.minStock), [ingredients])
+
+  const dynamicMenuCategories = useMemo(() => Array.from(new Set(menuItems.map(m => m.category).filter(Boolean))).sort(), [menuItems])
+  const dynamicIngredientCategories = useMemo(() => {
+    const fromData = Array.from(new Set(ingredients.map(i => i.category).filter(Boolean)))
+    const merged = new Set([...ingredientCategories, ...fromData])
+    return Array.from(merged).sort()
+  }, [ingredients])
 
   const recipeCost = (menuItemId: string): number => {
     const recipe = recipes.find(r => r.menuItemId === menuItemId)
@@ -410,10 +511,9 @@ export default function InventoryPage() {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={v => { setActiveTab(v); setSearch("") }}>
-          <TabsList className="grid w-full grid-cols-6 mb-6">
+          <TabsList className="grid w-full grid-cols-5 mb-6">
             <TabsTrigger value="dashboard"><Package className="w-4 h-4 mr-1 hidden sm:inline" />Resumen</TabsTrigger>
             <TabsTrigger value="ingredients"><ShoppingCart className="w-4 h-4 mr-1 hidden sm:inline" />Insumos</TabsTrigger>
-            <TabsTrigger value="suppliers"><Users className="w-4 h-4 mr-1 hidden sm:inline" />Proveedores</TabsTrigger>
             <TabsTrigger value="menu"><UtensilsCrossed className="w-4 h-4 mr-1 hidden sm:inline" />Platillos</TabsTrigger>
             <TabsTrigger value="recipes"><BookOpen className="w-4 h-4 mr-1 hidden sm:inline" />Recetas</TabsTrigger>
             <TabsTrigger value="movements"><ArrowUpDown className="w-4 h-4 mr-1 hidden sm:inline" />Movimientos</TabsTrigger>
@@ -437,7 +537,7 @@ export default function InventoryPage() {
                 <CardContent className="p-4 flex items-start justify-between gap-2">
                   <div>
                     <div className="text-xs text-muted-foreground mb-1">Valor del inventario</div>
-                    <div className="text-2xl font-bold text-primary">${totalInventoryValue.toFixed(2)}</div>
+                    <div className="text-2xl font-bold text-primary">Q{totalInventoryValue.toFixed(2)}</div>
                   </div>
                   <div className="rounded-lg bg-green-500/10 p-2 mt-0.5 shrink-0">
                     <TrendingUp className="w-5 h-5 text-green-500" />
@@ -478,24 +578,21 @@ export default function InventoryPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {lowStockIngredients.map(ing => {
-                      const supplier = suppliers.find(s => s.id === ing.supplierId)
-                      return (
+                    {lowStockIngredients.map(ing => (
                         <div key={ing.id} className="flex items-center justify-between p-3 rounded-lg bg-destructive/5 border border-destructive/20">
                           <div>
                             <div className="font-medium text-sm">{ing.name}</div>
                             <div className="text-xs text-muted-foreground">
                               Stock: <span className="font-bold text-destructive">{ing.stock} {ing.unit}</span>
                               {" "}· Mínimo: {ing.minStock} {ing.unit}
-                              {supplier ? <span> · {supplier.name}</span> : null}
+                              {ing.proveedor ? <span> · {ing.proveedor}</span> : null}
                             </div>
                           </div>
                           <Button size="sm" variant="outline" className="bg-transparent" onClick={() => openMovement("entrada", ing.id)}>
                             <TrendingUp className="w-3 h-3 mr-1" />Entrada
                           </Button>
                         </div>
-                      )
-                    })}
+                    ))}
                   </div>
                 </CardContent>
               </Card>
@@ -519,7 +616,7 @@ export default function InventoryPage() {
                         <div>
                           <div className="text-sm font-medium">{m.name}</div>
                           <div className="text-xs text-muted-foreground">
-                            Costo: ${cost.toFixed(2)}{margin !== null ? ` · Margen: ${margin.toFixed(1)}%` : ""}
+                            Costo: Q{cost.toFixed(2)}{margin !== null ? ` · Margen: ${margin.toFixed(1)}%` : ""}
                           </div>
                         </div>
                         <Badge variant={status === "ok" ? "default" : status === "agotado" ? "destructive" : status === "bajo" ? "secondary" : "outline"} className="text-xs">
@@ -549,7 +646,7 @@ export default function InventoryPage() {
                 </Button>
               </div>
             </div>
-            {ingredientCategories.map(cat => {
+            {dynamicIngredientCategories.map(cat => {
               const list = ingredients.filter(i => i.category === cat && i.name.toLowerCase().includes(search.toLowerCase()))
               if (list.length === 0) return null
               return (
@@ -561,7 +658,6 @@ export default function InventoryPage() {
                   </div>
                   <div className="space-y-2">
                     {list.map(ing => {
-                      const supplier = suppliers.find(s => s.id === ing.supplierId)
                       const isLow = ing.stock <= ing.minStock
                       return (
                         <Card key={ing.id} className={`border-border ${isLow ? "border-l-4 border-l-destructive" : ""}`}>
@@ -576,8 +672,8 @@ export default function InventoryPage() {
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
                                   <span>Stock: <strong className={isLow ? "text-destructive" : "text-foreground"}>{ing.stock} {ing.unit}</strong></span>
                                   <span>Mínimo: {ing.minStock} {ing.unit}</span>
-                                  <span>Costo: ${ing.costPerUnit.toFixed(2)}/{ing.unit}</span>
-                                  <span>Proveedor: {supplier?.name || <em>Sin asignar</em>}</span>
+                                  <span>Costo: Q{ing.costPerUnit.toFixed(2)}/{ing.unit}</span>
+                                  {ing.proveedor && <span>Proveedor: {ing.proveedor}</span>}
                                 </div>
                                 {ing.notes && <div className="text-xs text-muted-foreground mt-1 italic">{ing.notes}</div>}
                               </div>
@@ -600,51 +696,6 @@ export default function InventoryPage() {
             })}
           </TabsContent>
 
-          {/* ══ PROVEEDORES ══ */}
-          <TabsContent value="suppliers" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Buscar proveedor..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
-              </div>
-              <Button size="sm" onClick={openNewSupplier}><Plus className="w-4 h-4 mr-1" />Nuevo proveedor</Button>
-            </div>
-            <div className="space-y-3">
-              {suppliers.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.contact.toLowerCase().includes(search.toLowerCase())).map(s => {
-                const myIngredients = ingredients.filter(i => i.supplierId === s.id)
-                return (
-                  <Card key={s.id} className="border-border">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold">{s.name}</span>
-                            {!s.active && <Badge variant="outline" className="text-xs">Inactivo</Badge>}
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
-                            {s.contact && <span>Contacto: {s.contact}</span>}
-                            {s.phone && <span>Tel: {s.phone}</span>}
-                            {s.email && <span>Email: {s.email}</span>}
-                          </div>
-                          {s.notes && <div className="text-xs italic text-muted-foreground mt-1">{s.notes}</div>}
-                          {myIngredients.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {myIngredients.map(i => <Badge key={i.id} variant="secondary" className="text-xs">{i.name}</Badge>)}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 ml-2">
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEditSupplier(s)}><Pencil className="w-3.5 h-3.5" /></Button>
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteSupplier(s.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>
-          </TabsContent>
-
           {/* ══ PLATILLOS ══ */}
           <TabsContent value="menu" className="space-y-4">
             <div className="flex items-center justify-between">
@@ -654,7 +705,7 @@ export default function InventoryPage() {
               </div>
               <Button size="sm" onClick={openNewMenuItem}><Plus className="w-4 h-4 mr-1" />Nuevo platillo</Button>
             </div>
-            {menuCategories.map(cat => {
+            {dynamicMenuCategories.map(cat => {
               const list = menuItems.filter(m => m.category === cat && m.name.toLowerCase().includes(search.toLowerCase()))
               if (list.length === 0) return null
               return (
@@ -681,8 +732,8 @@ export default function InventoryPage() {
                                   {hasRecipe && portions === 0 && <Badge variant="destructive" className="text-xs">Sin stock</Badge>}
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 text-xs text-muted-foreground">
-                                  <span>Precio: <strong className="text-foreground">${m.salePrice.toFixed(2)}</strong></span>
-                                  <span>Costo receta: ${cost.toFixed(2)}</span>
+                                  <span>Precio: <strong className="text-foreground">Q{m.salePrice.toFixed(2)}</strong></span>
+                                  <span>Costo receta: Q{cost.toFixed(2)}</span>
                                   {margin !== null && <span>Margen: <strong className={margin < 30 ? "text-destructive" : "text-green-500"}>{margin.toFixed(1)}%</strong></span>}
                                   <span>Porciones: {portions === Infinity ? "∞" : portions}</span>
                                 </div>
@@ -731,7 +782,7 @@ export default function InventoryPage() {
                             <div className="font-medium text-sm">{m.name}</div>
                             <div className="text-xs text-muted-foreground">
                               {recipe
-                                ? `${recipe.lines.length} insumo(s) · Costo: $${cost.toFixed(2)} · Margen: ${m.salePrice > 0 ? (((m.salePrice - cost) / m.salePrice) * 100).toFixed(1) : "—"}%`
+                                ? `${recipe.lines.length} insumo(s) · Costo: Q${cost.toFixed(2)} · Margen: ${m.salePrice > 0 ? (((m.salePrice - cost) / m.salePrice) * 100).toFixed(1) : "—"}%`
                                 : "Sin receta"}
                             </div>
                           </div>
@@ -759,13 +810,13 @@ export default function InventoryPage() {
                                   <span>{ing.name}</span>
                                   <span className="text-xs text-muted-foreground">{line.quantity} {ing.unit}</span>
                                 </div>
-                                <span className="text-xs text-muted-foreground">${(ing.costPerUnit * line.quantity).toFixed(2)}</span>
+                                <span className="text-xs text-muted-foreground">Q{(ing.costPerUnit * line.quantity).toFixed(2)}</span>
                               </div>
                             )
                           })}
                           <Separator className="my-1" />
                           <div className="flex justify-between text-sm font-semibold">
-                            <span>Costo total</span><span>${cost.toFixed(2)}</span>
+                            <span>Costo total</span><span>Q{cost.toFixed(2)}</span>
                           </div>
                           {recipe.notes && <div className="text-xs italic text-muted-foreground">{recipe.notes}</div>}
                         </div>
@@ -780,7 +831,7 @@ export default function InventoryPage() {
           {/* ══ MOVIMIENTOS ══ */}
           <TabsContent value="movements" className="space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">{movements.length} movimientos registrados en esta sesión</p>
+              <p className="text-sm text-muted-foreground">{movements.length} movimientos registrados</p>
               <Button size="sm" onClick={() => openMovement()}><Plus className="w-4 h-4 mr-1" />Nuevo movimiento</Button>
             </div>
             {movements.length === 0 ? (
@@ -810,7 +861,7 @@ export default function InventoryPage() {
                           </div>
                           <div className="text-xs text-muted-foreground text-right">
                             <div>{new Date(mv.date).toLocaleString()}</div>
-                            {mv.type === "entrada" && mv.costPerUnit ? <div>Costo: ${mv.costPerUnit.toFixed(2)}/{ing?.unit}</div> : null}
+                            {mv.type === "entrada" && mv.costPerUnit ? <div>Costo: Q{mv.costPerUnit.toFixed(2)}/{ing?.unit}</div> : null}
                           </div>
                         </div>
                       </CardContent>
@@ -824,50 +875,6 @@ export default function InventoryPage() {
       </div>
 
       {/* ══ DIALOGS ══ */}
-
-      {/* Supplier */}
-      <Dialog open={showSupplierDialog} onOpenChange={setShowSupplierDialog}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{editingSupplier ? "Editar proveedor" : "Nuevo proveedor"}</DialogTitle>
-            <DialogDescription>
-              {editingSupplier ? `Modificando: ${editingSupplier.name}` : "Completa los datos del proveedor para registrarlo en el sistema."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>Nombre *</Label>
-              <Input value={supplierForm.name} onChange={e => setSupplierForm(p => ({ ...p, name: e.target.value }))} placeholder="Nombre del proveedor" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Contacto</Label>
-                <Input value={supplierForm.contact} onChange={e => setSupplierForm(p => ({ ...p, contact: e.target.value }))} placeholder="Nombre del contacto" />
-              </div>
-              <div className="space-y-1">
-                <Label>Teléfono</Label>
-                <Input value={supplierForm.phone} onChange={e => setSupplierForm(p => ({ ...p, phone: e.target.value }))} placeholder="555-0000" />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label>Email</Label>
-              <Input type="email" value={supplierForm.email} onChange={e => setSupplierForm(p => ({ ...p, email: e.target.value }))} placeholder="correo@proveedor.com" />
-            </div>
-            <div className="space-y-1">
-              <Label>Notas</Label>
-              <Textarea value={supplierForm.notes} onChange={e => setSupplierForm(p => ({ ...p, notes: e.target.value }))} placeholder="Días de entrega, condiciones de pago..." rows={2} />
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch checked={supplierForm.active} onCheckedChange={v => setSupplierForm(p => ({ ...p, active: v }))} />
-              <Label>Activo</Label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSupplierDialog(false)}>Cancelar</Button>
-            <Button onClick={saveSupplier}>Guardar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Ingredient */}
       <Dialog open={showIngredientDialog} onOpenChange={setShowIngredientDialog}>
@@ -888,7 +895,7 @@ export default function InventoryPage() {
                 <Label>Categoría</Label>
                 <Select value={ingredientForm.category} onValueChange={v => setIngredientForm(p => ({ ...p, category: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{ingredientCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  <SelectContent>{dynamicIngredientCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
@@ -915,16 +922,7 @@ export default function InventoryPage() {
             </div>
             <div className="space-y-1">
               <Label>Proveedor</Label>
-              <Select
-                value={ingredientForm.supplierId || "none"}
-                onValueChange={v => setIngredientForm(p => ({ ...p, supplierId: v === "none" ? "" : v }))}
-              >
-                <SelectTrigger><SelectValue placeholder="Seleccionar proveedor" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sin asignar</SelectItem>
-                  {suppliers.filter(s => s.active).map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Input value={ingredientForm.proveedor} onChange={e => setIngredientForm(p => ({ ...p, proveedor: e.target.value }))} placeholder="Nombre del proveedor (opcional)" />
             </div>
             <div className="space-y-1">
               <Label>Notas</Label>
@@ -961,7 +959,7 @@ export default function InventoryPage() {
                 <Label>Categoría</Label>
                 <Select value={menuForm.category} onValueChange={v => setMenuForm(p => ({ ...p, category: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{menuCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  <SelectContent>{dynamicMenuCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
@@ -1009,7 +1007,7 @@ export default function InventoryPage() {
                       value={line.quantity} onChange={e => updateRecipeLine(idx, "quantity", e.target.value)} />
                   </div>
                   <div className="text-xs text-muted-foreground w-16 text-right">
-                    {(() => { const ing = ingredients.find(i => i.id === line.ingredientId); return ing ? `$${(ing.costPerUnit * line.quantity).toFixed(2)}` : "" })()}
+                    {(() => { const ing = ingredients.find(i => i.id === line.ingredientId); return ing ? `Q${(ing.costPerUnit * line.quantity).toFixed(2)}` : "" })()}
                   </div>
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => removeRecipeLine(idx)}>
                     <Trash2 className="w-3.5 h-3.5" />
