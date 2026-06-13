@@ -22,8 +22,9 @@ export function PrintTicketView({ ticket, taxRate, negocio }: {
   if (!ticket) return null
   const sub = ticket.items.reduce((s, i) => s + (i.price + getModifiersPrice(i.modifiers)) * i.quantity, 0)
   const disc = ticket.discountAmount || 0
+  const tip = ticket.tipAmount || 0
   const tax = Math.max(0, sub - disc) * taxRate
-  const total = Math.max(0, sub - disc) + tax
+  const total = Math.max(0, sub - disc) + tax + tip
 
   return (
     <div className="print-only print-ticket mx-auto text-xs text-black">
@@ -57,6 +58,7 @@ export function PrintTicketView({ ticket, taxRate, negocio }: {
           <div className="flex justify-between"><span>Subtotal</span><span>Q{sub.toFixed(2)}</span></div>
           {disc > 0 && <div className="flex justify-between"><span>Descuento</span><span>-Q{disc.toFixed(2)}</span></div>}
           <div className="flex justify-between"><span>IVA ({(taxRate * 100).toFixed(0)}%)</span><span>Q{tax.toFixed(2)}</span></div>
+          {tip > 0 && <div className="flex justify-between"><span>Propina</span><span>Q{tip.toFixed(2)}</span></div>}
           <div className="border-t border-dashed border-black my-1" />
           <div className="flex justify-between font-bold"><span>Total</span><span>Q{total.toFixed(2)}</span></div>
           {ticket.kind === "payment" && ticket.tenders.length > 0 && (<>

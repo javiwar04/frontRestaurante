@@ -6,9 +6,9 @@ import {
   getSession, clearSession,
   secciones as seccionesApi,
   platillos as platillosApi,
-  turnos, ordenes, pagos, facturas,
+  turnos, ordenes, pagos, facturas, auditoria,
   config,
-  type Turno, type Orden, type CreateOrdenItemRequest,
+  type Turno, type Orden, type Pago, type CreateOrdenItemRequest,
 } from "@/lib/api"
 import { connectRealtime } from "@/lib/realtime"
 import { Button } from "@/components/ui/button"
@@ -108,6 +108,11 @@ export default function POSPage() {
   const [serviceType, setServiceType] = useState<"mesa" | "para_llevar" | "domicilio">("mesa")
   const [orderStatus, setOrderStatus] = useState<"pendiente" | "en_cocina" | "lista" | "pagado">("pendiente")
   const [discountAmount, setDiscountAmount] = useState(0)
+
+  // Propina: monto que se cobra ADEMÁS del total (no se le aplica IVA).
+  // Se captura en el diálogo de pago; el backend la persiste en la orden.
+  const [tipAmount, setTipAmount] = useState(0)
+  const [suggestedTipPct, setSuggestedTipPct] = useState(10)
 
   // Tasa de IVA — se carga desde /config/impuestos para coincidir con el backend
   const [TAX_RATE, setTaxRate] = useState(0.12)
@@ -220,33 +225,105 @@ export default function POSPage() {
     setSessionReady(true)
   }, [router])
 
-  // 2. Check active turno → decide initial mode + restore shift data
+  // 2. Check active turno → decide initial mode + hydrate shift FROM BACKEND
+  //    Las ventas del turno (pagos, facturado, métodos) son autoritativas del
+  //    backend, así que el resumen sobrevive refrescos y cambios de máquina.
+  //    localStorage queda solo como caché que enriquece con detalle local
+  //    (ítems del ticket, movimientos de caja, etc.) en la misma estación.
   useEffect(() => {
     if (!sessionReady) return
-    turnos.getActivo("pos").then((t) => {
-      if (t) {
-        setCurrentTurno(t)
-        setCashOpen(true)
-        setInitialCash(t.efectivoInicial ?? 0)
-        setMode("tables")
-        // Restore persisted shift data if it matches this turno
-        const saved = loadShiftData()
-        if (saved && saved.turnoId === t.id) {
-          setCurrentShift((prev) => ({ ...saved.shiftReport, userId: prev.userId, userName: prev.userName }))
-          setPayments(saved.payments)
-          setAuditLog(saved.auditLog)
-          setCurrentCash(saved.currentCash)
-          setInvoices(saved.invoices || [])
-          shiftHydratedRef.current = true
-        } else {
-          setCurrentCash(t.efectivoInicial ?? 0)
-          shiftHydratedRef.current = true
-        }
+    let cancelled = false
+    const methodMap: Record<string, "cash" | "card" | "transfer"> = {
+      cash: "cash", card: "card", transfer: "transfer",
+      efectivo: "cash", tarjeta: "card", transferencia: "transfer",
+    }
+    ;(async () => {
+      let t: Turno | null = null
+      try { t = await turnos.getActivo("pos") } catch { /* sin turno */ }
+      if (cancelled) return
+      if (!t) { shiftHydratedRef.current = true; setMode("cash-open"); return }
+
+      setCurrentTurno(t)
+      setCashOpen(true)
+      setInitialCash(t.efectivoInicial ?? 0)
+      setMode("tables")
+
+      const saved = loadShiftData()
+      const sameTurno = !!saved && saved.turnoId === t.id
+
+      // Pagos del turno desde el backend (fuente de verdad)
+      let backendPagos: Pago[] = []
+      try { backendPagos = (await pagos.getAll("pos")).filter((p) => p.turnoId === t!.id) }
+      catch { /* si falla, caemos al caché local abajo */ }
+      if (cancelled) return
+
+      if (backendPagos.length > 0) {
+        // Indexar caché local por id de pago del backend para recuperar detalle
+        const localByBackendId = new Map<string, Payment>()
+        if (sameTurno) saved!.payments.forEach((p) => { if (p.backendPagoId) localByBackendId.set(p.backendPagoId, p) })
+
+        const rebuilt: Payment[] = backendPagos
+          .slice()
+          .sort((a, b) => new Date(a.registradoEn).getTime() - new Date(b.registradoEn).getTime())
+          .map((bp) => {
+            const local = localByBackendId.get(bp.id)
+            const tenders = (bp.tenders || []).map((tn, i) => ({
+              id: `td-${bp.id}-${i}`, method: methodMap[tn.metodo] ?? "cash", amount: tn.monto,
+            }))
+            return {
+              id: local?.id ?? `PAY-${bp.id}`,
+              backendPagoId: bp.id,
+              orderId: bp.ordenId,
+              tableNumber: local?.tableNumber ?? "-",
+              amount: bp.montoTotal,
+              tenders: local?.tenders ?? tenders,
+              timestamp: new Date(bp.registradoEn),
+              userId: bp.meseroId ?? local?.userId ?? "",
+              userName: bp.meseroNombre ?? local?.userName ?? "",
+              invoiced: bp.facturado,
+              items: local?.items ?? [],
+              waiterId: local?.waiterId,
+              waiterName: local?.waiterName ?? bp.meseroNombre ?? undefined,
+              discountAmount: local?.discountAmount ?? 0,
+              tipAmount: local?.tipAmount,
+            }
+          })
+
+        const paymentMethods = { cash: 0, card: 0, transfer: 0 }
+        backendPagos.forEach((bp) => (bp.tenders || []).forEach((tn) => {
+          paymentMethods[methodMap[tn.metodo] ?? "cash"] += tn.monto
+        }))
+        const totalSales = backendPagos.reduce((s, bp) => s + bp.montoTotal, 0)
+        const cashSales = paymentMethods.cash
+
+        setPayments(rebuilt)
+        setCurrentShift((prev) => ({
+          ...prev,
+          shiftId: t!.id,
+          totalSales,
+          totalOrders: backendPagos.length,
+          paymentMethods,
+          // productsUsed solo lo tiene el caché de la estación original
+          productsUsed: sameTurno ? saved!.shiftReport.productsUsed : {},
+        }))
+        // currentCash: con movimientos de caja locales si es la misma estación;
+        // si no, lo mejor disponible es inicial + ventas en efectivo del backend
+        setCurrentCash(sameTurno ? saved!.currentCash : (t.efectivoInicial ?? 0) + cashSales)
+        setInvoices(sameTurno ? (saved!.invoices || []) : [])
+        setAuditLog(sameTurno ? saved!.auditLog : [])
+      } else if (sameTurno) {
+        // Sin pagos en backend pero hay caché de este turno (p.ej. turno recién abierto)
+        setCurrentShift((prev) => ({ ...saved!.shiftReport, userId: prev.userId, userName: prev.userName }))
+        setPayments(saved!.payments)
+        setAuditLog(saved!.auditLog)
+        setCurrentCash(saved!.currentCash)
+        setInvoices(saved!.invoices || [])
       } else {
-        shiftHydratedRef.current = true
-        setMode("cash-open")
+        setCurrentCash(t.efectivoInicial ?? 0)
       }
-    }).catch(() => { shiftHydratedRef.current = true; setMode("cash-open") })
+      shiftHydratedRef.current = true
+    })()
+    return () => { cancelled = true }
   }, [sessionReady])
 
   // 2b. Auto-save shift data to localStorage whenever it changes
@@ -376,7 +453,10 @@ export default function POSPage() {
     if (!sessionReady || !cashOpen) return
     const conn = connectRealtime((e) => {
       if (e.evento === "lista") {
-        toast({ title: "🛎️ Orden lista para servir", description: "Cocina terminó de preparar una orden." })
+        toast({
+          title: e.numeroMesa ? `🛎️ Mesa ${e.numeroMesa} lista` : "🛎️ Orden lista para servir",
+          description: "Cocina terminó de preparar el pedido.",
+        })
       }
       // Solo refrescar el estado de mesas en la vista de mesas; en la vista de
       // orden el cajero está editando y no conviene pisar su estado local
@@ -421,7 +501,10 @@ export default function POSPage() {
       if (typeof c?.ivaPorcentaje === "number" && c.ivaPorcentaje >= 0 && c.ivaPorcentaje <= 100) {
         setTaxRate(c.ivaActivo === false ? 0 : c.ivaPorcentaje / 100)
       }
-    }).catch(() => { /* mantener 0.12 por defecto */ })
+      if (typeof c?.propinaSugerida === "number" && c.propinaSugerida > 0 && c.propinaSugerida <= 100) {
+        setSuggestedTipPct(c.propinaSugerida)
+      }
+    }).catch(() => { /* mantener defaults */ })
   }, [sessionReady])
 
   // 6b. Datos del negocio para el encabezado del ticket impreso
@@ -556,7 +639,22 @@ export default function POSPage() {
 
   const calculateTax = () => Math.max(0, calculateSubtotal() - discountAmount) * TAX_RATE
 
-  const calculateTotal = () => Math.max(0, calculateSubtotal() - discountAmount) + calculateTax()
+  // Total del consumo (subtotal - descuento + IVA), sin propina
+  const calculateBaseTotal = () => Math.max(0, calculateSubtotal() - discountAmount) + calculateTax()
+
+  // Total a cobrar = consumo + propina
+  const calculateTotal = () => calculateBaseTotal() + tipAmount
+
+  // Fija la propina y, si solo hay un método de pago, ajusta su monto al nuevo total
+  const applyTip = (newTip: number) => {
+    const tip = Math.max(0, Number(newTip.toFixed(2)))
+    setTipAmount(tip)
+    setPaymentTendersDraft((prev) =>
+      prev.length === 1
+        ? [{ ...prev[0], amount: Number((calculateBaseTotal() + tip).toFixed(2)) }]
+        : prev
+    )
+  }
 
   const getInvoiceBreakdownFromTotal = (total: number) => {
     const sub = total / (1 + TAX_RATE)
@@ -569,6 +667,9 @@ export default function POSPage() {
       timestamp: new Date(), userId: currentUser.id, userName: currentUser.name,
       role: currentUser.role, action, description,
     }])
+    // Persistir server-side (fire-and-forget): la bitácora real queda en el
+    // backend con quién ejecutó la acción, sobrevive refrescos y cambios de equipo
+    auditoria.registrar(action, description, "pos").catch(() => {})
   }
 
   const closeAllDialogs = () => {
@@ -1021,7 +1122,8 @@ export default function POSPage() {
     if (pendingItems.length > 0 && sentItems.length === 0) {
       toast({ title: "Items sin enviar", description: "Envíe el pedido a cocina antes de cobrar, o continúe para cobrar directamente." })
     }
-    setPaymentTendersDraft([{ id: `td-${Date.now()}`, method: "cash", amount: Number(calculateTotal().toFixed(2)) }])
+    setTipAmount(0)
+    setPaymentTendersDraft([{ id: `td-${Date.now()}`, method: "cash", amount: Number(calculateBaseTotal().toFixed(2)) }])
     setShowPaymentDialog(true)
   }
 
@@ -1075,10 +1177,11 @@ export default function POSPage() {
           }
         }
 
-        // 2. Persistir el descuento (el backend recalcula impuestos y total)
-        if (discountAmount > 0) {
+        // 2. Persistir descuento y propina (el backend recalcula impuestos y total;
+        //    la propina se suma al total que los tenders deben cubrir)
+        if (discountAmount > 0 || tipAmount > 0) {
           await ordenes.update(backendOrderId, {
-            descuento: discountAmount, propina: 0, notas: null, comensales: diners,
+            descuento: discountAmount, propina: tipAmount, notas: null, comensales: diners,
           }, "pos")
         }
 
@@ -1125,7 +1228,7 @@ export default function POSPage() {
       timestamp: new Date(), userId: currentUser.id, userName: currentUser.name,
       invoiced: false, items: currentOrder.map((i) => ({ ...i })),
       waiterId: waiter?.id, waiterName: waiter?.name,
-      discountAmount,
+      discountAmount, tipAmount,
     }
     setPayments((prev) => [...prev, payment])
 
@@ -1233,7 +1336,8 @@ export default function POSPage() {
         kind: "payment", ticketId: lastPayment.orderId, timestamp: lastPayment.timestamp,
         tableNumber: lastPayment.tableNumber,
         waiterName: lastPayment.waiterName || "-", serviceType,
-        diners, items: lastPayment.items, discountAmount,
+        diners, items: lastPayment.items, discountAmount: lastPayment.discountAmount,
+        tipAmount: lastPayment.tipAmount,
         tenders: lastPayment.tenders, paidBy: lastPayment.userName,
       })
       setTimeout(() => {
@@ -1564,7 +1668,7 @@ export default function POSPage() {
                 <div className="flex gap-1 flex-wrap mt-2">
                   {categories.map((cat) => (
                     <Button key={cat} variant={selectedCategory === cat ? "default" : "outline"} size="sm"
-                      className="h-7 text-xs" onClick={() => setSelectedCategory(cat)}>{cat}</Button>
+                      className="h-9 text-xs touch-manipulation" onClick={() => setSelectedCategory(cat)}>{cat}</Button>
                   ))}
                 </div>
               </CardHeader>
@@ -1572,12 +1676,12 @@ export default function POSPage() {
                 <ScrollArea className="h-[calc(100vh-280px)]">
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                     {filteredMenu.map((item) => (
-                      <Card key={item.id} className="cursor-pointer hover:shadow-md transition-all"
+                      <Card key={item.id} className="cursor-pointer hover:shadow-md active:scale-[0.98] transition-all touch-manipulation select-none min-h-20"
                         onClick={() => orderStatus !== "pagado" && handleAddItem(item)}>
-                        <CardContent className="p-3">
-                          <div className="font-medium text-sm">{item.name}</div>
+                        <CardContent className="p-3 flex flex-col h-full">
+                          <div className="font-medium text-sm leading-tight">{item.name}</div>
                           <div className="text-xs text-muted-foreground">{item.category}</div>
-                          <div className="font-bold text-primary mt-1">Q{item.price.toFixed(2)}</div>
+                          <div className="font-bold text-primary mt-auto pt-1">Q{item.price.toFixed(2)}</div>
                         </CardContent>
                       </Card>
                     ))}
@@ -1647,13 +1751,13 @@ export default function POSPage() {
                             )}
                           </div>
                           <div className="flex items-center justify-between mt-1">
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5">
                               {!item.sent && orderStatus !== "pagado" && (<>
-                                <Button size="sm" variant="outline" className="h-6 w-6 p-0"
-                                  onClick={() => handleUpdateQuantity(idx, -1)}><Minus className="w-3 h-3" /></Button>
-                                <span className="text-sm font-medium w-6 text-center">{item.quantity}</span>
-                                <Button size="sm" variant="outline" className="h-6 w-6 p-0"
-                                  onClick={() => handleUpdateQuantity(idx, 1)}><Plus className="w-3 h-3" /></Button>
+                                <Button size="sm" variant="outline" className="h-9 w-9 p-0 touch-manipulation"
+                                  onClick={() => handleUpdateQuantity(idx, -1)}><Minus className="w-4 h-4" /></Button>
+                                <span className="text-sm font-medium w-7 text-center">{item.quantity}</span>
+                                <Button size="sm" variant="outline" className="h-9 w-9 p-0 touch-manipulation"
+                                  onClick={() => handleUpdateQuantity(idx, 1)}><Plus className="w-4 h-4" /></Button>
                               </>)}
                               {item.sent && <span className="text-sm text-muted-foreground">×{item.quantity}</span>}
                             </div>
@@ -1878,8 +1982,41 @@ export default function POSPage() {
               ))}
             </ScrollArea>
             <Separator />
-            <div className="flex justify-between text-lg font-bold">
-              <span>Total:</span><span className="text-primary">Q{calculateTotal().toFixed(2)}</span>
+
+            {/* Propina */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Propina</Label>
+                <span className="text-xs text-muted-foreground">Sugerida: {suggestedTipPct}%</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[0, suggestedTipPct, suggestedTipPct + 5, 15].filter((v, i, arr) => arr.indexOf(v) === i).map((pct) => {
+                  const tipForPct = Number((calculateBaseTotal() * (pct / 100)).toFixed(2))
+                  const active = Math.abs(tipAmount - tipForPct) < 0.01
+                  return (
+                    <Button key={pct} type="button" size="sm" variant={active ? "default" : "outline"}
+                      className={`min-h-11 ${active ? "" : "bg-transparent"}`}
+                      onClick={() => applyTip(tipForPct)}>
+                      {pct === 0 ? "Sin propina" : `${pct}%`}
+                    </Button>
+                  )
+                })}
+                <div className="flex items-center gap-1">
+                  <span className="text-sm text-muted-foreground">Q</span>
+                  <Input type="number" step="0.01" className="w-24 min-h-11" value={tipAmount || ""}
+                    placeholder="0.00"
+                    onChange={(e) => applyTip(Number(e.target.value) || 0)} />
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between text-muted-foreground"><span>Consumo</span><span>Q{calculateBaseTotal().toFixed(2)}</span></div>
+              {tipAmount > 0 && <div className="flex justify-between text-muted-foreground"><span>Propina</span><span>Q{tipAmount.toFixed(2)}</span></div>}
+              <div className="flex justify-between text-lg font-bold">
+                <span>Total:</span><span className="text-primary">Q{calculateTotal().toFixed(2)}</span>
+              </div>
             </div>
 
             <div className="space-y-2">

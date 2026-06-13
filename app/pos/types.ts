@@ -38,6 +38,7 @@ export interface Payment {
   waiterId?: string
   waiterName?: string
   discountAmount: number
+  tipAmount?: number
 }
 
 export interface Invoice {
@@ -126,6 +127,7 @@ export interface PrintTicketData {
   diners: number
   items: OrderItem[]
   discountAmount: number
+  tipAmount?: number
   tenders: PaymentTenderDraft[]
   paidBy?: string
 }

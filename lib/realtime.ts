@@ -10,6 +10,7 @@ import { API_BASE } from "./api"
 export interface OrdenCambioEvent {
   evento: "nueva" | "actualizada" | "lista" | "pagada" | "cancelada" | string
   ordenId: string
+  numeroMesa?: number | null
 }
 
 /**
@@ -23,7 +24,9 @@ export function connectRealtime(onOrdenesCambio: (e: OrdenCambioEvent) => void):
     .configureLogging(LogLevel.Warning)
     .build()
 
-  conn.on("ordenes:cambio", (e: OrdenCambioEvent) => onOrdenesCambio(e))
+  // Bloque (no return): si devolviéramos un valor, SignalR intentaría
+  // enviarlo de vuelta al servidor y registraría un error
+  conn.on("ordenes:cambio", (e: OrdenCambioEvent) => { onOrdenesCambio(e) })
 
   conn.start().catch(() => {
     // Sin tiempo real: el polling de cada página sigue funcionando

@@ -28,7 +28,10 @@ interface KitchenItem {
   quantity: number
   notes: string
   done: boolean
+  station: string   // categoría del platillo (parrilla, bebidas, postres…)
 }
+
+const SIN_ESTACION = "Sin estación"
 
 interface KitchenOrder {
   id: string
@@ -64,6 +67,7 @@ function apiToKitchenOrder(o: CocinaOrden, prevOrders: KitchenOrder[]): KitchenO
       quantity: i.cantidad,
       notes: i.notas ?? "",
       done: i.estado === "listo",
+      station: i.categoria || SIN_ESTACION,
     })),
     // "pendiente" es el estado real con que nacen las órdenes en backend
     status: (o.estado === "abierta" || (o.estado as string) === "pendiente") ? "pending"
@@ -121,6 +125,7 @@ export default function KitchenPage() {
   const [sessionReady, setSessionReady] = useState(false)
   const [orders, setOrders] = useState<KitchenOrder[]>([])
   const [filter, setFilter] = useState<"all" | "pending" | "preparing" | "ready">("all")
+  const [station, setStation] = useState<string>("all")   // filtro por estación de cocina
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [alertBanner, setAlertBanner] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(Date.now())
@@ -222,11 +227,23 @@ export default function KitchenPage() {
   }
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const filteredOrders = filter === "all" ? orders : orders.filter(o => o.status === filter)
+  // Estaciones disponibles según las categorías presentes en las órdenes
+  const stations = Array.from(new Set(orders.flatMap(o => o.items.map(i => i.station)))).sort()
+
+  // Al filtrar por estación, cada orden muestra SOLO los ítems de esa estación
+  // (vista de estación tipo KDS comercial); las órdenes sin ítems de la
+  // estación seleccionada se ocultan.
+  const stationFiltered: KitchenOrder[] = station === "all"
+    ? orders
+    : orders
+        .map(o => ({ ...o, items: o.items.filter(i => i.station === station) }))
+        .filter(o => o.items.length > 0)
+
+  const filteredOrders = filter === "all" ? stationFiltered : stationFiltered.filter(o => o.status === filter)
   const counts = {
-    pending:   orders.filter(o => o.status === "pending").length,
-    preparing: orders.filter(o => o.status === "preparing").length,
-    ready:     orders.filter(o => o.status === "ready").length,
+    pending:   stationFiltered.filter(o => o.status === "pending").length,
+    preparing: stationFiltered.filter(o => o.status === "preparing").length,
+    ready:     stationFiltered.filter(o => o.status === "ready").length,
   }
 
   const statusBorder = (o: KitchenOrder) => {
@@ -247,7 +264,12 @@ export default function KitchenPage() {
     s === "pending" ? "Pendiente" : s === "preparing" ? "Preparando" : "Listo"
 
   const pendingItemsDone = (o: KitchenOrder) => o.items.filter(i => i.done).length
-  const allItemsDone     = (o: KitchenOrder) => o.items.every(i => i.done)
+  // "Listo" cierra la orden COMPLETA, así que se valida contra la orden
+  // original (no contra los ítems filtrados por estación)
+  const allItemsDone = (o: KitchenOrder) => {
+    const full = orders.find(x => x.id === o.id) ?? o
+    return full.items.every(i => i.done)
+  }
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -314,6 +336,24 @@ export default function KitchenPage() {
             </Button>
           ))}
         </div>
+
+        {/* Estación de cocina (solo si hay más de una categoría) */}
+        {stations.length > 1 && (
+          <div className="flex gap-2 mb-6 flex-wrap items-center">
+            <span className="text-xs text-muted-foreground mr-1">Estación:</span>
+            {["all", ...stations].map((st) => (
+              <Button
+                key={st}
+                variant={station === st ? "secondary" : "outline"}
+                className={station !== st ? "bg-transparent" : ""}
+                size="sm"
+                onClick={() => setStation(st)}
+              >
+                {st === "all" ? "Todas" : st}
+              </Button>
+            ))}
+          </div>
+        )}
 
         {/* Orders grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

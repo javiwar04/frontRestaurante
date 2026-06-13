@@ -491,9 +491,10 @@ export interface CocinaOrden {
   meseroNombre?: string
   tipoServicio: string
   items: {
-    id: string
+    id: number | string
     platilloNombre: string
     nombre?: string          // alias que algunos endpoints devuelven en lugar de platilloNombre
+    categoria?: string | null // estación de cocina (parrilla/bebidas/postres…)
     cantidad: number
     notas?: string
     estado: "pendiente" | "en_preparacion" | "listo"
@@ -1051,4 +1052,12 @@ export const auditoria = {
     const q = p.toString()
     return apiFetch<AuditoriaResponse>(`/auditoria${q ? `?${q}` : ""}`, { module })
   },
+  // Registra una acción sensible (cancelación, descuento autorizado, etc.).
+  // Fire-and-forget desde el cliente: el usuario sale del token en el backend.
+  registrar: (accion: string, descripcion?: string, module = "pos") =>
+    apiFetch<{ ok: boolean }>("/auditoria", {
+      method: "POST",
+      body: JSON.stringify({ accion, descripcion }),
+      module,
+    }),
 }

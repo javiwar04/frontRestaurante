@@ -61,8 +61,10 @@ import {
   AlertTriangle,
   ScrollText,
   Filter,
+  LayoutDashboard,
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
+import { DashboardLive } from "./dashboard-live"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -400,7 +402,7 @@ export default function AdminPage() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [business, setBusiness] = useState<BusinessConfig>(defaultBusiness)
   const [taxConfig, setTaxConfig] = useState<TaxConfig>(defaultTax)
-  const [activeTab, setActiveTab] = useState("users")
+  const [activeTab, setActiveTab] = useState("dashboard")
 
   // ── Auditoría ──────────────────────────────────────────────────────────────
   const [auditEntries, setAuditEntries] = useState<AuditoriaEntry[]>([])
@@ -933,7 +935,8 @@ export default function AdminPage() {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-8 mb-6">
+          <TabsList className="grid w-full grid-cols-9 mb-6">
+            <TabsTrigger value="dashboard"><LayoutDashboard className="w-4 h-4 mr-1 hidden sm:inline" />Dashboard</TabsTrigger>
             <TabsTrigger value="users"><Users className="w-4 h-4 mr-1 hidden sm:inline" />Usuarios</TabsTrigger>
             <TabsTrigger value="tables"><LayoutGrid className="w-4 h-4 mr-1 hidden sm:inline" />Mesas</TabsTrigger>
             <TabsTrigger value="menu"><UtensilsCrossed className="w-4 h-4 mr-1 hidden sm:inline" />Menú</TabsTrigger>
@@ -943,6 +946,11 @@ export default function AdminPage() {
             <TabsTrigger value="comandas"><Receipt className="w-4 h-4 mr-1 hidden sm:inline" />Comandas</TabsTrigger>
             <TabsTrigger value="audit" onClick={() => loadAudit()}><ScrollText className="w-4 h-4 mr-1 hidden sm:inline" />Auditoría</TabsTrigger>
           </TabsList>
+
+          {/* ══ DASHBOARD ══ */}
+          <TabsContent value="dashboard" className="space-y-4">
+            <DashboardLive module="admin" />
+          </TabsContent>
 
           {/* ══ USUARIOS ══ */}
           <TabsContent value="users" className="space-y-4">
