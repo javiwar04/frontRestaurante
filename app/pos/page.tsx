@@ -1469,7 +1469,7 @@ export default function POSPage() {
             <Button className="w-full" size="lg" onClick={openCash} disabled={cashOpenLoading}>
               {cashOpenLoading ? "Abriendo..." : "Abrir Caja y Comenzar Turno"}
             </Button>
-            <Button variant="ghost" className="w-full" onClick={() => { clearSession("pos"); clearActiveEstablecimiento(); router.push("/pos/login") }}>
+            <Button variant="ghost" className="w-full" onClick={() => { clearSession("pos"); clearActiveEstablecimiento("pos"); router.push("/pos/login") }}>
               <LogOut className="w-4 h-4 mr-2" /> Cerrar Sesión
             </Button>
           </CardContent>
@@ -1532,7 +1532,7 @@ export default function POSPage() {
                 <Button variant="outline" size="sm" onClick={() => loadSectorsAndOrders()}>
                   <RefreshCw className="w-4 h-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => { clearSession("pos"); clearActiveEstablecimiento(); router.push("/pos/login") }}>
+                <Button variant="ghost" size="sm" onClick={() => { clearSession("pos"); clearActiveEstablecimiento("pos"); router.push("/pos/login") }}>
                   <LogOut className="w-4 h-4 mr-1" />Salir
                 </Button>
               </div>
@@ -2891,7 +2891,7 @@ export default function POSPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowShiftDialog(false)}>Cancelar</Button>
-            <Button onClick={() => { setShowShiftDialog(false); clearSession("pos"); clearActiveEstablecimiento(); router.push("/pos/login") }}>Confirmar y Cerrar</Button>
+            <Button onClick={() => { setShowShiftDialog(false); clearSession("pos"); clearActiveEstablecimiento("pos"); router.push("/pos/login") }}>Confirmar y Cerrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

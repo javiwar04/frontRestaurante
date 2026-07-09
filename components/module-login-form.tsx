@@ -65,7 +65,7 @@ export default function ModuleLoginForm({
 
       // Persist session (necesaria para poder consultar los establecimientos)
       saveSession(module, { token: data.token, user: data.user })
-      clearActiveEstablecimiento()
+      clearActiveEstablecimiento(module)
 
       // Sin selección de sucursal: entrar directo
       if (!selectEstablecimiento) {
@@ -81,7 +81,7 @@ export default function ModuleLoginForm({
         return
       }
       if (lista.length === 1) {
-        setActiveEstablecimiento(lista[0].id)
+        setActiveEstablecimiento(module, lista[0].id)
         router.push(`/${module}`)
         return
       }
@@ -99,7 +99,7 @@ export default function ModuleLoginForm({
   }
 
   const elegirSucursal = (id: string) => {
-    setActiveEstablecimiento(id)
+    setActiveEstablecimiento(module, id)
     router.push(`/${module}`)
   }
 

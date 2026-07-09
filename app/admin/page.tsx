@@ -62,9 +62,11 @@ import {
   ScrollText,
   Filter,
   LayoutDashboard,
+  Package,
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { DashboardLive } from "./dashboard-live"
+import { InventoryOverview } from "./inventory-overview"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -935,8 +937,9 @@ export default function AdminPage() {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-9 mb-6">
+          <TabsList className="grid w-full grid-cols-10 mb-6">
             <TabsTrigger value="dashboard"><LayoutDashboard className="w-4 h-4 mr-1 hidden sm:inline" />Dashboard</TabsTrigger>
+            <TabsTrigger value="inventory"><Package className="w-4 h-4 mr-1 hidden sm:inline" />Inventario</TabsTrigger>
             <TabsTrigger value="users"><Users className="w-4 h-4 mr-1 hidden sm:inline" />Usuarios</TabsTrigger>
             <TabsTrigger value="tables"><LayoutGrid className="w-4 h-4 mr-1 hidden sm:inline" />Mesas</TabsTrigger>
             <TabsTrigger value="menu"><UtensilsCrossed className="w-4 h-4 mr-1 hidden sm:inline" />Menú</TabsTrigger>
@@ -950,6 +953,11 @@ export default function AdminPage() {
           {/* ══ DASHBOARD ══ */}
           <TabsContent value="dashboard" className="space-y-4">
             <DashboardLive module="admin" />
+          </TabsContent>
+
+          {/* ══ INVENTARIO (consolidado) ══ */}
+          <TabsContent value="inventory" className="space-y-4">
+            <InventoryOverview />
           </TabsContent>
 
           {/* ══ USUARIOS ══ */}

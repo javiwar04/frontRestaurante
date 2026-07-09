@@ -56,19 +56,21 @@ export function clearSession(module: string): void {
 // Se elige al iniciar sesión en el POS y viaja en cada request como header
 // X-Establecimiento para que el backend filtre inventario, caja, menú, etc.
 
-const ESTABLECIMIENTO_KEY = "establecimiento_activo"
+// Guardado POR MÓDULO: así el POS y el inventario pueden estar en sucursales
+// distintas, y el admin (que no elige sucursal) nunca hereda una ajena.
+const estKey = (module: string) => `establecimiento_activo_${module}`
 
-export function getActiveEstablecimiento(): string | null {
+export function getActiveEstablecimiento(module: string): string | null {
   if (typeof window === "undefined") return null
-  return localStorage.getItem(ESTABLECIMIENTO_KEY)
+  return localStorage.getItem(estKey(module))
 }
 
-export function setActiveEstablecimiento(id: string): void {
-  localStorage.setItem(ESTABLECIMIENTO_KEY, id)
+export function setActiveEstablecimiento(module: string, id: string): void {
+  localStorage.setItem(estKey(module), id)
 }
 
-export function clearActiveEstablecimiento(): void {
-  localStorage.removeItem(ESTABLECIMIENTO_KEY)
+export function clearActiveEstablecimiento(module: string): void {
+  localStorage.removeItem(estKey(module))
 }
 
 // ─── Generic fetcher ─────────────────────────────────────────────────────────
@@ -99,7 +101,7 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const { module, ...fetchOptions } = options
   const token = module ? (getToken(module) || getAnyToken()) : null
-  const establecimientoId = getActiveEstablecimiento()
+  const establecimientoId = module ? getActiveEstablecimiento(module) : null
 
   const res = await fetch(`${API_BASE}${endpoint}`, {
     ...fetchOptions,
@@ -852,6 +854,8 @@ export interface Insumo {
   costoUnitario: number
   categoriaId?: string | null
   categoriaNombre?: string | null
+  establecimientoId?: string | null
+  establecimientoNombre?: string | null
   proveedor?: string | null
   activo: boolean
   notas?: string | null
@@ -876,8 +880,12 @@ export interface AjusteStockRequest {
 }
 
 export const insumos = {
-  getAll: (module = "inventory") =>
-    apiFetch<Insumo[]>("/insumos", { module }),
+  // establecimientoId: filtro explícito para la vista consolidada del admin
+  // (sin él, el header X-Establecimiento del módulo decide)
+  getAll: (module = "inventory", establecimientoId?: string) => {
+    const q = establecimientoId ? `?establecimiento=${encodeURIComponent(establecimientoId)}` : ""
+    return apiFetch<Insumo[]>(`/insumos${q}`, { module })
+  },
   getOne: (id: string, module = "inventory") =>
     apiFetch<Insumo>(`/insumos/${id}`, { module }),
   create: (data: CreateInsumoRequest, module = "admin") =>

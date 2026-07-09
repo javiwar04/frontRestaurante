@@ -284,7 +284,7 @@ export default function InventoryPage() {
 
   const logout = () => {
     clearSession("inventory")
-    clearActiveEstablecimiento()
+    clearActiveEstablecimiento("inventory")
     router.push("/inventory/login")
   }
 
