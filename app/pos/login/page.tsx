@@ -11,6 +11,7 @@ export default function POSLoginPage() {
       Icon={ShoppingCart}
       iconBgClass="bg-blue-500/10"
       iconColorClass="text-blue-500"
+      selectEstablecimiento
     />
   )
 }

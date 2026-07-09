@@ -52,6 +52,25 @@ export function clearSession(module: string): void {
   localStorage.removeItem(`module_session_${module}`)
 }
 
+// ─── Establecimiento activo (sucursal seleccionada) ──────────────────────────
+// Se elige al iniciar sesión en el POS y viaja en cada request como header
+// X-Establecimiento para que el backend filtre inventario, caja, menú, etc.
+
+const ESTABLECIMIENTO_KEY = "establecimiento_activo"
+
+export function getActiveEstablecimiento(): string | null {
+  if (typeof window === "undefined") return null
+  return localStorage.getItem(ESTABLECIMIENTO_KEY)
+}
+
+export function setActiveEstablecimiento(id: string): void {
+  localStorage.setItem(ESTABLECIMIENTO_KEY, id)
+}
+
+export function clearActiveEstablecimiento(): void {
+  localStorage.removeItem(ESTABLECIMIENTO_KEY)
+}
+
 // ─── Generic fetcher ─────────────────────────────────────────────────────────
 
 export interface ApiError {
@@ -80,12 +99,15 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const { module, ...fetchOptions } = options
   const token = module ? (getToken(module) || getAnyToken()) : null
+  const establecimientoId = getActiveEstablecimiento()
 
   const res = await fetch(`${API_BASE}${endpoint}`, {
     ...fetchOptions,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      // Sucursal activa: el backend filtra por ella cuando aplica
+      ...(establecimientoId ? { "X-Establecimiento": establecimientoId } : {}),
       ...(fetchOptions.headers ?? {}),
     },
   })
@@ -149,6 +171,28 @@ export async function authLogout(module: string): Promise<{ ok: boolean }> {
   })
   clearSession(module)
   return result
+}
+
+// ─── Establecimientos (sucursales) ───────────────────────────────────────────
+
+export interface Establecimiento {
+  id: string
+  nombre: string
+  direccion?: string | null
+  telefono?: string | null
+  activo: boolean
+}
+
+export const establecimientos = {
+  // Los que puede usar el usuario autenticado (selector del POS)
+  getAll: (module = "pos") =>
+    apiFetch<Establecimiento[]>("/establecimientos", { module }),
+  getTodos: (module = "admin") =>
+    apiFetch<Establecimiento[]>("/establecimientos/todos", { module }),
+  create: (data: { nombre: string; direccion?: string; telefono?: string }, module = "admin") =>
+    apiFetch<Establecimiento>("/establecimientos", { method: "POST", body: JSON.stringify(data), module }),
+  update: (id: string, data: { nombre?: string; direccion?: string; telefono?: string; activo?: boolean }, module = "admin") =>
+    apiFetch<Establecimiento>(`/establecimientos/${id}`, { method: "PUT", body: JSON.stringify(data), module }),
 }
 
 // ─── Categorías menú ─────────────────────────────────────────────────────────

@@ -9,8 +9,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ArrowLeft, Lock } from "lucide-react"
-import { authLogin, saveSession } from "@/lib/api"
+import { ArrowLeft, Lock, Store } from "lucide-react"
+import {
+  authLogin, saveSession, establecimientos as establecimientosApi,
+  setActiveEstablecimiento, clearActiveEstablecimiento, type Establecimiento,
+} from "@/lib/api"
 
 interface ModuleLoginFormProps {
   /** Internal module key, e.g. "pos", "admin", "kitchen" */
@@ -25,6 +28,8 @@ interface ModuleLoginFormProps {
   iconBgClass?: string
   /** Tailwind colour class for the icon itself, e.g. "text-blue-500" */
   iconColorClass?: string
+  /** Si true, tras validar el PIN pide elegir sucursal (POS) */
+  selectEstablecimiento?: boolean
 }
 
 export default function ModuleLoginForm({
@@ -34,11 +39,14 @@ export default function ModuleLoginForm({
   Icon,
   iconBgClass = "bg-primary/10",
   iconColorClass = "text-primary",
+  selectEstablecimiento = false,
 }: ModuleLoginFormProps) {
   const router = useRouter()
   const [credentials, setCredentials] = useState({ username: "", pin: "" })
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  // Paso de selección de sucursal (solo cuando selectEstablecimiento y hay varias)
+  const [sucursales, setSucursales] = useState<Establecimiento[] | null>(null)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -55,11 +63,31 @@ export default function ModuleLoginForm({
         return
       }
 
-      // Persist session
+      // Persist session (necesaria para poder consultar los establecimientos)
       saveSession(module, { token: data.token, user: data.user })
+      clearActiveEstablecimiento()
 
-      // Navigate into the module
-      router.push(`/${module}`)
+      // Sin selección de sucursal: entrar directo
+      if (!selectEstablecimiento) {
+        router.push(`/${module}`)
+        return
+      }
+
+      // Elegir sucursal
+      const lista = await establecimientosApi.getAll(module)
+      if (lista.length === 0) {
+        setError("Su usuario no tiene ninguna sucursal asignada. Contacte al administrador.")
+        setIsLoading(false)
+        return
+      }
+      if (lista.length === 1) {
+        setActiveEstablecimiento(lista[0].id)
+        router.push(`/${module}`)
+        return
+      }
+      // Varias: mostrar selector
+      setSucursales(lista)
+      setIsLoading(false)
     } catch (err: unknown) {
       const msg =
         err && typeof err === "object" && "message" in err
@@ -68,6 +96,11 @@ export default function ModuleLoginForm({
       setError(msg)
       setIsLoading(false)
     }
+  }
+
+  const elegirSucursal = (id: string) => {
+    setActiveEstablecimiento(id)
+    router.push(`/${module}`)
   }
 
   return (
@@ -87,11 +120,31 @@ export default function ModuleLoginForm({
             </div>
             <div className="text-center">
               <CardTitle className="text-2xl">{title}</CardTitle>
-              <CardDescription className="mt-2">{description}</CardDescription>
+              <CardDescription className="mt-2">
+                {sucursales ? "Seleccione la sucursal" : description}
+              </CardDescription>
             </div>
           </CardHeader>
 
           <CardContent>
+            {sucursales ? (
+              <div className="space-y-2">
+                {sucursales.map((s) => (
+                  <Button
+                    key={s.id}
+                    variant="outline"
+                    className="w-full justify-start h-14 bg-transparent"
+                    onClick={() => elegirSucursal(s.id)}
+                  >
+                    <Store className="w-5 h-5 mr-3 text-primary" />
+                    <span className="text-base font-medium">{s.nombre}</span>
+                  </Button>
+                ))}
+                <Button variant="ghost" className="w-full mt-2" onClick={() => { setSucursales(null); setCredentials({ username: "", pin: "" }) }}>
+                  Cancelar
+                </Button>
+              </div>
+            ) : (
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="username">Usuario</Label>
@@ -135,6 +188,7 @@ export default function ModuleLoginForm({
                 Contacte al administrador si olvidó su PIN.
               </p>
             </form>
+            )}
           </CardContent>
         </Card>
       </div>
