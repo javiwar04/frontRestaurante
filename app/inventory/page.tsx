@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
-  getSession, clearSession, type AuthUser,
+  getSession, clearSession, clearActiveEstablecimiento, type AuthUser,
   insumos, recetas, platillos as platillosApi, movimientos,
   type Insumo,
 } from "@/lib/api"
@@ -284,6 +284,7 @@ export default function InventoryPage() {
 
   const logout = () => {
     clearSession("inventory")
+    clearActiveEstablecimiento()
     router.push("/inventory/login")
   }
 

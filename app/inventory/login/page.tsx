@@ -11,6 +11,7 @@ export default function InventoryLoginPage() {
       Icon={Package}
       iconBgClass="bg-orange-500/10"
       iconColorClass="text-orange-500"
+      selectEstablecimiento
     />
   )
 }
