@@ -11,6 +11,7 @@ import {
   type Turno, type Orden, type Pago, type CreateOrdenItemRequest,
 } from "@/lib/api"
 import { connectRealtime } from "@/lib/realtime"
+import { FACTURACION_HABILITADA } from "@/lib/features"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -306,9 +307,9 @@ export default function POSPage() {
           // productsUsed solo lo tiene el caché de la estación original
           productsUsed: sameTurno ? saved!.shiftReport.productsUsed : {},
         }))
-        // currentCash: con movimientos de caja locales si es la misma estación;
-        // si no, lo mejor disponible es inicial + ventas en efectivo del backend
-        setCurrentCash(sameTurno ? saved!.currentCash : (t.efectivoInicial ?? 0) + cashSales)
+        // currentCash: el backend ya calcula efectivoEnCaja (inicial + ventas
+        // efectivo + entradas - retiros), autoritativo y con movimientos incluidos
+        setCurrentCash(t.efectivoEnCaja ?? (t.efectivoInicial ?? 0) + cashSales)
         setInvoices(sameTurno ? (saved!.invoices || []) : [])
         setAuditLog(sameTurno ? saved!.auditLog : [])
       } else if (sameTurno) {
@@ -316,10 +317,10 @@ export default function POSPage() {
         setCurrentShift((prev) => ({ ...saved!.shiftReport, userId: prev.userId, userName: prev.userName }))
         setPayments(saved!.payments)
         setAuditLog(saved!.auditLog)
-        setCurrentCash(saved!.currentCash)
+        setCurrentCash(t.efectivoEnCaja ?? saved!.currentCash)
         setInvoices(saved!.invoices || [])
       } else {
-        setCurrentCash(t.efectivoInicial ?? 0)
+        setCurrentCash(t.efectivoEnCaja ?? t.efectivoInicial ?? 0)
       }
       shiftHydratedRef.current = true
     })()
@@ -870,18 +871,30 @@ export default function POSPage() {
 
   const registerCashMove = () => {
     if (!cashMoveReason.trim() || cashMoveAmount <= 0) return
-    const exec = () => {
-      setCurrentCash((prev) => cashMoveType === "entrada" ? prev + cashMoveAmount : prev - cashMoveAmount)
+    const monto = cashMoveAmount
+    const tipo = cashMoveType
+    const motivo = cashMoveReason.trim()
+    const exec = async () => {
+      // Persistir en el backend (fuente de verdad del efectivo en caja)
+      if (currentTurno?.id) {
+        try {
+          await turnos.addMovimiento(currentTurno.id, { tipo, monto, motivo }, "pos")
+        } catch (e) {
+          toast({ title: "No se pudo registrar el movimiento", description: String((e as any)?.message ?? e), variant: "destructive" })
+          return
+        }
+      }
+      setCurrentCash((prev) => tipo === "entrada" ? prev + monto : prev - monto)
       setShowCashMove(false)
       toast({
-        title: cashMoveType === "entrada" ? "Entrada de efectivo" : "Retiro de efectivo",
-        description: `Q${cashMoveAmount.toFixed(2)} - ${cashMoveReason}`,
+        title: tipo === "entrada" ? "Entrada de efectivo" : "Retiro de efectivo",
+        description: `Q${monto.toFixed(2)} - ${motivo}`,
       })
-      logAudit("cash-" + cashMoveType, `${cashMoveReason} · Q${cashMoveAmount.toFixed(2)}`)
+      logAudit("cash-" + tipo, `${motivo} · Q${monto.toFixed(2)}`)
       setCashMoveAmount(0)
       setCashMoveReason("")
     }
-    if (cashMoveType === "retiro") { requireSupervisor("Autorizar retiro de efectivo", exec); return }
+    if (tipo === "retiro") { requireSupervisor("Autorizar retiro de efectivo", exec); return }
     exec()
   }
 
@@ -1278,6 +1291,13 @@ export default function POSPage() {
     skipNextReloadRef.current = true
     logAudit("payment", `Mesa ${selectedTable.label} · Q${payment.amount.toFixed(2)}`)
 
+    // Facturación cerrada (futura FEL): imprimir recibo y volver a mesas.
+    // Cuando se reactive, se ofrece la factura como antes.
+    if (!FACTURACION_HABILITADA) {
+      printAndGoToTables()
+      return
+    }
+
     // Offer invoice immediately
     setCurrentPayment(payment)
     setInvoiceCustomerName("")
@@ -1501,9 +1521,11 @@ export default function POSPage() {
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                <Button variant="outline" size="sm" onClick={() => setShowBillingDialog(true)}>
-                  <Receipt className="w-4 h-4 mr-2" />Facturación
-                </Button>
+                {FACTURACION_HABILITADA && (
+                  <Button variant="outline" size="sm" onClick={() => setShowBillingDialog(true)}>
+                    <Receipt className="w-4 h-4 mr-2" />Facturación
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => setShowReportsDialog(true)}>
                   <BarChart3 className="w-4 h-4 mr-2" />Reportes
                 </Button>

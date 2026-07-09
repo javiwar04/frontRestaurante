@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ChefHat, ShoppingCart, UtensilsCrossed, Package, DollarSign, Users, BarChart3 } from "lucide-react"
+import { FACTURACION_HABILITADA } from "@/lib/features"
 
 interface ModuleCard {
   id: string
@@ -14,6 +15,8 @@ interface ModuleCard {
   href: string
   color: string
   requiresAuth: boolean
+  disabled?: boolean
+  disabledNote?: string
 }
 
 export default function HomePage() {
@@ -50,11 +53,13 @@ export default function HomePage() {
     {
       id: "billing",
       title: "Facturación",
-      description: "Gestión de facturas, pagos y reportes financieros",
+      description: "Gestión de facturas electrónicas (FEL Guatemala)",
       icon: <DollarSign className="w-8 h-8" />,
       href: "/billing/login",
       color: "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20",
       requiresAuth: true,
+      disabled: !FACTURACION_HABILITADA,
+      disabledNote: "Próximamente (FEL)",
     },
     {
       id: "reports",
@@ -77,6 +82,7 @@ export default function HomePage() {
   ]
 
   const handleModuleClick = (module: ModuleCard) => {
+    if (module.disabled) return
     router.push(module.href)
   }
 
@@ -109,7 +115,9 @@ export default function HomePage() {
           {modules.map((module) => (
             <Card
               key={module.id}
-              className="border-border hover:border-primary/50 transition-all cursor-pointer group hover:shadow-lg"
+              className={`border-border transition-all group ${module.disabled
+                ? "opacity-50 cursor-not-allowed"
+                : "hover:border-primary/50 cursor-pointer hover:shadow-lg"}`}
               onClick={() => handleModuleClick(module)}
             >
               <CardHeader>
@@ -118,9 +126,12 @@ export default function HomePage() {
                 >
                   {module.icon}
                 </div>
-                <CardTitle className="group-hover:text-primary transition-colors">
+                <CardTitle className={module.disabled ? "" : "group-hover:text-primary transition-colors"}>
                   {module.title}
-                  {!module.requiresAuth && (
+                  {module.disabled && module.disabledNote && (
+                    <span className="ml-2 text-xs font-normal text-amber-500">({module.disabledNote})</span>
+                  )}
+                  {!module.disabled && !module.requiresAuth && (
                     <span className="ml-2 text-xs font-normal text-green-500">(Acceso Libre)</span>
                   )}
                 </CardTitle>
@@ -129,9 +140,10 @@ export default function HomePage() {
               <CardContent>
                 <Button
                   variant="outline"
-                  className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors bg-transparent"
+                  disabled={module.disabled}
+                  className={`w-full transition-colors bg-transparent ${module.disabled ? "" : "group-hover:bg-primary group-hover:text-primary-foreground"}`}
                 >
-                  {module.requiresAuth ? "Ingresar" : "Abrir"}
+                  {module.disabled ? "No disponible" : module.requiresAuth ? "Ingresar" : "Abrir"}
                 </Button>
               </CardContent>
             </Card>

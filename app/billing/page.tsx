@@ -17,9 +17,10 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  ArrowLeft, LogOut, Receipt, FileText, Plus, XCircle, CheckCircle, Search, RefreshCw,
+  ArrowLeft, LogOut, Receipt, FileText, Plus, XCircle, CheckCircle, Search, RefreshCw, Clock,
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
+import { FACTURACION_HABILITADA } from "@/lib/features"
 
 const fmt = (n: number) => `Q${n.toFixed(2)}`
 const fmtDate = (s: string) =>
@@ -38,6 +39,29 @@ export default function BillingPage() {
   }, [router])
 
   const logout = () => { clearSession("billing"); router.push("/billing/login") }
+
+  // Módulo cerrado hasta integrar FEL de Guatemala
+  if (!FACTURACION_HABILITADA) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <Card className="max-w-md w-full border-border">
+          <CardContent className="p-8 text-center space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto">
+              <Clock className="w-8 h-8" />
+            </div>
+            <h1 className="text-2xl font-bold">Facturación — próximamente</h1>
+            <p className="text-muted-foreground">
+              Este módulo se habilitará al integrar la Factura Electrónica en Línea (FEL) de la SAT Guatemala.
+              Por ahora los cobros se registran normalmente en el punto de venta.
+            </p>
+            <Button variant="outline" className="bg-transparent" onClick={() => router.push("/")}>
+              <ArrowLeft className="w-4 h-4 mr-2" />Volver al panel
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [pagosList, setPagosList] = useState<Pago[]>([])

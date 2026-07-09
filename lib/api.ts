@@ -327,7 +327,20 @@ export interface Turno {
   ventasEfectivo?: number
   ventasTarjeta?: number
   ventasTransfer?: number
+  totalEntradas?: number
+  totalRetiros?: number
+  efectivoEnCaja?: number      // inicial + ventas efectivo + entradas - retiros
   notas?: string | null
+}
+
+export interface MovimientoCaja {
+  id: number
+  turnoId: string
+  tipo: "entrada" | "retiro"
+  monto: number
+  motivo: string
+  usuarioNombre?: string | null
+  registradoEn: string
 }
 
 export interface CorteInfo {
@@ -361,6 +374,14 @@ export const turnos = {
   cerrar: (id: string, data: { efectivoFinalReal: number; notas?: string }, module = "pos") =>
     apiFetch<{ turno: Turno; corte: CorteInfo }>(`/turnos/${id}/cerrar`, {
       method: "PATCH",
+      body: JSON.stringify(data),
+      module,
+    }),
+  getMovimientos: (id: string, module = "pos") =>
+    apiFetch<MovimientoCaja[]>(`/turnos/${id}/movimientos`, { module }),
+  addMovimiento: (id: string, data: { tipo: "entrada" | "retiro"; monto: number; motivo: string }, module = "pos") =>
+    apiFetch<MovimientoCaja>(`/turnos/${id}/movimientos`, {
+      method: "POST",
       body: JSON.stringify(data),
       module,
     }),
