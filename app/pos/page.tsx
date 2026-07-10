@@ -2356,17 +2356,48 @@ export default function POSPage() {
       <Dialog open={showCashClose} onOpenChange={setShowCashClose}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cerrar Caja</DialogTitle>
-            <DialogDescription>Arqueo de caja</DialogDescription>
+            <DialogTitle>Cerrar Caja — Resumen del turno</DialogTitle>
+            <DialogDescription>Revisa las ventas antes de cerrar</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm"><span>Efectivo en sistema:</span><span className="font-medium">Q{currentCash.toFixed(2)}</span></div>
-            <Label>Efectivo físico</Label>
-            <Input type="number" step="0.01" value={physicalCount} onChange={(e) => setPhysicalCount(Number(e.target.value))} />
-            <div className="flex justify-between text-sm"><span>Diferencia:</span>
-              <span className={`font-medium ${physicalCount - currentCash === 0 ? "text-green-600" : "text-destructive"}`}>
-                Q{(physicalCount - currentCash).toFixed(2)}
-              </span>
+          <div className="space-y-4">
+            {/* Resumen de ventas del turno */}
+            <div className="grid grid-cols-2 gap-2">
+              <Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">Total vendido</div><div className="text-xl font-bold text-primary">Q{currentShift.totalSales.toFixed(2)}</div></CardContent></Card>
+              <Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">Órdenes</div><div className="text-xl font-bold">{currentShift.totalOrders}</div></CardContent></Card>
+            </div>
+            <div className="rounded-md border p-3 space-y-1 text-sm">
+              <div className="flex justify-between"><span>💵 Efectivo</span><span className="font-medium text-green-600">Q{currentShift.paymentMethods.cash.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>💳 Tarjeta</span><span className="font-medium">Q{currentShift.paymentMethods.card.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>🔁 Transferencia</span><span className="font-medium">Q{currentShift.paymentMethods.transfer.toFixed(2)}</span></div>
+            </div>
+
+            {/* Productos vendidos (cuántos tacos, cuántas cocas, etc.) */}
+            {Object.keys(currentShift.productsUsed).length > 0 && (
+              <div>
+                <Label className="text-xs text-muted-foreground">Productos vendidos</Label>
+                <ScrollArea className="max-h-40 mt-1 rounded-md border">
+                  <div className="p-2 space-y-0.5">
+                    {Object.entries(currentShift.productsUsed).sort((a, b) => b[1] - a[1]).map(([nombre, cant]) => (
+                      <div key={nombre} className="flex justify-between text-sm">
+                        <span>{nombre}</span><span className="font-medium">{cant}</span>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+
+            {/* Arqueo de efectivo */}
+            <Separator />
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm"><span>Efectivo esperado en caja:</span><span className="font-medium">Q{currentCash.toFixed(2)}</span></div>
+              <Label>Efectivo físico (contado)</Label>
+              <Input type="number" step="0.01" value={physicalCount} onChange={(e) => setPhysicalCount(Number(e.target.value))} />
+              <div className="flex justify-between text-sm"><span>Diferencia:</span>
+                <span className={`font-medium ${physicalCount - currentCash === 0 ? "text-green-600" : "text-destructive"}`}>
+                  Q{(physicalCount - currentCash).toFixed(2)}
+                </span>
+              </div>
             </div>
           </div>
           <DialogFooter>
