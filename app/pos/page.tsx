@@ -6,9 +6,9 @@ import {
   getSession, clearSession, clearActiveEstablecimiento,
   secciones as seccionesApi,
   platillos as platillosApi,
-  turnos, ordenes, pagos, facturas, auditoria,
+  turnos, ordenes, pagos, facturas, auditoria, cortesInventario,
   config,
-  type Turno, type Orden, type Pago, type CreateOrdenItemRequest,
+  type Turno, type Orden, type Pago, type CreateOrdenItemRequest, type PreconteoItem,
 } from "@/lib/api"
 import { connectRealtime } from "@/lib/realtime"
 import { FACTURACION_HABILITADA } from "@/lib/features"
@@ -78,6 +78,13 @@ export default function POSPage() {
   const [cashMoveReason, setCashMoveReason] = useState("")
   const [physicalCount, setPhysicalCount] = useState(0)
   const [cashOpenLoading, setCashOpenLoading] = useState(false)
+
+  // ─── Corte de inventario (obligatorio al cerrar turno) ──────────────────────
+  type ConteoRow = PreconteoItem & { encontreStr: string; ingresoStr: string; quedoStr: string }
+  const [showInventoryCount, setShowInventoryCount] = useState(false)
+  const [conteoItems, setConteoItems] = useState<ConteoRow[]>([])
+  const [conteoLoading, setConteoLoading] = useState(false)
+  const [conteoSaving, setConteoSaving] = useState(false)
 
   // ─── Shift report ──────────────────────────────────────────────────────────
   const [currentShift, setCurrentShift] = useState<ShiftReport>({
@@ -835,6 +842,55 @@ export default function POSPage() {
         toast({ title: "No se pudo abrir la caja", description: String((e as any)?.message ?? e), variant: "destructive" })
       })
       .finally(() => setCashOpenLoading(false))
+  }
+
+  // Paso 1 del cierre: cargar la hoja de conteo de inventario (obligatoria)
+  const startInventoryCount = async () => {
+    if (!currentTurno?.id) { closeCash(); return }
+    setConteoLoading(true)
+    try {
+      const pre = await cortesInventario.preconteo(currentTurno.id, "pos")
+      setConteoItems(pre.items.map((i) => ({
+        ...i,
+        encontreStr: String(i.encontre),
+        ingresoStr: String(i.ingreso),
+        quedoStr: String(i.quedo),
+      })))
+      setShowCashClose(false)
+      setShowInventoryCount(true)
+    } catch (e) {
+      toast({ title: "No se pudo cargar el conteo", description: String((e as any)?.message ?? e), variant: "destructive" })
+    } finally {
+      setConteoLoading(false)
+    }
+  }
+
+  const setConteoField = (insumoId: string, field: "encontreStr" | "ingresoStr" | "quedoStr", value: string) => {
+    setConteoItems((prev) => prev.map((r) => r.insumoId === insumoId ? { ...r, [field]: value } : r))
+  }
+
+  // Paso 2: guardar el corte de inventario y cerrar el turno
+  const confirmInventoryCount = async () => {
+    if (!currentTurno?.id || conteoSaving) return
+    setConteoSaving(true)
+    try {
+      await cortesInventario.create({
+        turnoId: currentTurno.id,
+        detalles: conteoItems.map((r) => ({
+          insumoId: r.insumoId,
+          encontre: Number(r.encontreStr) || 0,
+          ingreso: Number(r.ingresoStr) || 0,
+          quedo: Number(r.quedoStr) || 0,
+        })),
+      }, "pos")
+      logAudit("inventory-count", `${conteoItems.length} insumos contados`)
+      setShowInventoryCount(false)
+      closeCash()   // recién ahora se cierra el turno
+    } catch (e) {
+      toast({ title: "No se pudo guardar el conteo", description: String((e as any)?.message ?? e), variant: "destructive" })
+    } finally {
+      setConteoSaving(false)
+    }
   }
 
   const closeCash = () => {
@@ -2315,7 +2371,64 @@ export default function POSPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCashClose(false)}>Cancelar</Button>
-            <Button onClick={closeCash}>Confirmar Cierre</Button>
+            <Button onClick={startInventoryCount} disabled={conteoLoading}>
+              {conteoLoading ? "Cargando…" : "Continuar al conteo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Conteo de inventario (obligatorio antes de cerrar el turno) */}
+      <Dialog open={showInventoryCount} onOpenChange={(o) => { if (!conteoSaving) setShowInventoryCount(o) }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Conteo de inventario</DialogTitle>
+            <DialogDescription>
+              Cuenta el producto físico para cerrar el turno. Encontré + Ingreso − Quedó = consumido; la merma se compara con lo vendido.
+            </DialogDescription>
+          </DialogHeader>
+          {conteoItems.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No hay insumos para contar en esta sucursal.</p>
+          ) : (
+            <ScrollArea className="flex-1 -mx-2 px-2">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-background">
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="py-2">Insumo</th>
+                    <th className="w-20 text-center">Encontré</th>
+                    <th className="w-20 text-center">Ingreso</th>
+                    <th className="w-20 text-center">Quedó</th>
+                    <th className="w-24 text-right">Merma</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {conteoItems.map((r) => {
+                    const consumido = (Number(r.encontreStr) || 0) + (Number(r.ingresoStr) || 0) - (Number(r.quedoStr) || 0)
+                    const merma = consumido - r.vendidoTeorico
+                    return (
+                      <tr key={r.insumoId} className="border-b border-border/50">
+                        <td className="py-1.5">{r.nombre} <span className="text-xs text-muted-foreground">({r.unidad})</span></td>
+                        <td><Input type="number" step="0.01" className="h-8 text-center" value={r.encontreStr}
+                          onChange={(e) => setConteoField(r.insumoId, "encontreStr", e.target.value)} /></td>
+                        <td><Input type="number" step="0.01" className="h-8 text-center" value={r.ingresoStr}
+                          onChange={(e) => setConteoField(r.insumoId, "ingresoStr", e.target.value)} /></td>
+                        <td><Input type="number" step="0.01" className="h-8 text-center" value={r.quedoStr}
+                          onChange={(e) => setConteoField(r.insumoId, "quedoStr", e.target.value)} /></td>
+                        <td className={`text-right font-medium ${Math.abs(merma) > 0.001 ? "text-destructive" : "text-green-600"}`}>
+                          {merma.toFixed(2)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </ScrollArea>
+          )}
+          <DialogFooter className="border-t pt-3">
+            <Button variant="outline" onClick={() => { setShowInventoryCount(false); setShowCashClose(true) }} disabled={conteoSaving}>Atrás</Button>
+            <Button onClick={confirmInventoryCount} disabled={conteoSaving}>
+              {conteoSaving ? "Guardando…" : "Confirmar y cerrar turno"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

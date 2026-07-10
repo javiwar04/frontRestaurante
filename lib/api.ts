@@ -936,6 +936,55 @@ export interface CreateMovimientoRequest {
   ordenId?: string | null
 }
 
+// ─── Corte de inventario ─────────────────────────────────────────────────────
+
+export interface PreconteoItem {
+  insumoId: string
+  nombre: string
+  unidad: string
+  costoUnitario: number
+  encontre: number
+  ingreso: number
+  quedo: number
+  vendidoTeorico: number
+}
+
+export interface Preconteo {
+  turnoId: string
+  establecimientoId?: string | null
+  items: PreconteoItem[]
+}
+
+export interface CorteInventarioDetalle {
+  insumoId: string
+  insumoNombre: string
+  unidad: string
+  encontre: number
+  ingreso: number
+  quedo: number
+  vendidoTeorico: number
+  consumidoFisico: number
+  merma: number
+  valorMerma: number
+}
+
+export interface CorteInventario {
+  id: string
+  turnoId: string
+  fecha: string
+  totalMermaValor: number
+  detalles: CorteInventarioDetalle[]
+}
+
+export const cortesInventario = {
+  preconteo: (turnoId: string, module = "pos") =>
+    apiFetch<Preconteo>(`/cortes-inventario/preconteo?turnoId=${encodeURIComponent(turnoId)}`, { module }),
+  create: (data: { turnoId: string; notas?: string; detalles: { insumoId: string; encontre: number; ingreso: number; quedo: number }[] }, module = "pos") =>
+    apiFetch<CorteInventario>("/cortes-inventario", { method: "POST", body: JSON.stringify(data), module }),
+  getOne: (id: string, module = "pos") =>
+    apiFetch<CorteInventario>(`/cortes-inventario/${id}`, { module }),
+}
+
 export const movimientos = {
   getAll: (params: { insumoId?: string; tipo?: string; desde?: string; hasta?: string; limit?: number } = {}, module = "inventory") => {
     const q = new URLSearchParams()
