@@ -85,6 +85,8 @@ export default function POSPage() {
   const [conteoItems, setConteoItems] = useState<ConteoRow[]>([])
   const [conteoLoading, setConteoLoading] = useState(false)
   const [conteoSaving, setConteoSaving] = useState(false)
+  // Productos vendidos del turno (del backend = completo aunque se venda en varias tablets)
+  const [closeProducts, setCloseProducts] = useState<[string, number][]>([])
 
   // ─── Shift report ──────────────────────────────────────────────────────────
   const [currentShift, setCurrentShift] = useState<ShiftReport>({
@@ -844,6 +846,44 @@ export default function POSPage() {
       .finally(() => setCashOpenLoading(false))
   }
 
+  // Abrir el cierre: trae los productos vendidos del turno DESDE EL BACKEND
+  // (así el resumen es completo aunque el turno se haya atendido en varias tablets)
+  const openCashClose = async () => {
+    // Fallback inmediato con lo local, luego se reemplaza con lo del backend
+    setCloseProducts(Object.entries(currentShift.productsUsed).sort((a, b) => b[1] - a[1]))
+    setShowCashClose(true)
+    if (!currentTurno?.id) return
+    try {
+      const ords = await ordenes.getByTurno(currentTurno.id, "pos")
+      const agg: Record<string, number> = {}
+      ords
+        .filter((o) => o.estado === "pagado" || o.estado === "pagada")
+        .forEach((o) => o.items.forEach((it) => {
+          const nombre = it.platilloNombre || it.nombre || it.platilloId
+          agg[nombre] = (agg[nombre] || 0) + it.cantidad
+        }))
+      if (Object.keys(agg).length > 0) setCloseProducts(Object.entries(agg).sort((a, b) => b[1] - a[1]))
+    } catch { /* si falla, se queda con el resumen local */ }
+  }
+
+  // Imprime el resumen del cierre (usa el sistema de impresión de reportes)
+  const printCloseSummary = () => {
+    const s = currentShift
+    const lines: string[] = [
+      `Total vendido | Q${s.totalSales.toFixed(2)}`,
+      `Ordenes | ${s.totalOrders}`,
+      "---",
+      `Efectivo | Q${s.paymentMethods.cash.toFixed(2)}`,
+      `Tarjeta | Q${s.paymentMethods.card.toFixed(2)}`,
+      `Transferencia | Q${s.paymentMethods.transfer.toFixed(2)}`,
+      "---",
+      `Efectivo esperado | Q${currentCash.toFixed(2)}`,
+      "---", "## Productos vendidos",
+      ...closeProducts.map(([n, c]) => `${n} | ${c}`),
+    ]
+    triggerPrintReport("CORTE DE TURNO", lines)
+  }
+
   // Paso 1 del cierre: cargar la hoja de conteo de inventario (obligatoria)
   const startInventoryCount = async () => {
     if (!currentTurno?.id) { closeCash(); return }
@@ -1575,7 +1615,7 @@ export default function POSPage() {
                     <DropdownMenuLabel>Gestión de Caja</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => setShowCashMove(true)}>Movimiento de efectivo</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setShowCashClose(true)}>Cerrar Caja</DropdownMenuItem>
+                    <DropdownMenuItem onClick={openCashClose}>Cerrar Caja</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
 
@@ -2372,12 +2412,12 @@ export default function POSPage() {
             </div>
 
             {/* Productos vendidos (cuántos tacos, cuántas cocas, etc.) */}
-            {Object.keys(currentShift.productsUsed).length > 0 && (
+            {closeProducts.length > 0 && (
               <div>
                 <Label className="text-xs text-muted-foreground">Productos vendidos</Label>
                 <ScrollArea className="max-h-40 mt-1 rounded-md border">
                   <div className="p-2 space-y-0.5">
-                    {Object.entries(currentShift.productsUsed).sort((a, b) => b[1] - a[1]).map(([nombre, cant]) => (
+                    {closeProducts.map(([nombre, cant]) => (
                       <div key={nombre} className="flex justify-between text-sm">
                         <span>{nombre}</span><span className="font-medium">{cant}</span>
                       </div>
@@ -2400,8 +2440,11 @@ export default function POSPage() {
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowCashClose(false)}>Cancelar</Button>
+            <Button variant="outline" className="bg-transparent" onClick={printCloseSummary}>
+              <Printer className="w-4 h-4 mr-1" />Imprimir
+            </Button>
             <Button onClick={startInventoryCount} disabled={conteoLoading}>
               {conteoLoading ? "Cargando…" : "Continuar al conteo"}
             </Button>

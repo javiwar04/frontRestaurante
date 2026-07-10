@@ -515,6 +515,9 @@ export interface CreateOrdenRequest {
 export const ordenes = {
   getAll: (module = "pos") =>
     apiFetch<Orden[]>("/ordenes", { module }),
+  // Todas las órdenes de un turno (para el resumen de cierre, completo desde backend)
+  getByTurno: (turnoId: string, module = "pos") =>
+    apiFetch<Orden[]>(`/ordenes?turno_id=${encodeURIComponent(turnoId)}&limit=1000`, { module }),
   getOne: (id: string, module = "pos") =>
     apiFetch<Orden>(`/ordenes/${id}`, { module }),
   create: (data: CreateOrdenRequest, module = "pos") =>
