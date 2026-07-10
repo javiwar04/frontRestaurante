@@ -7,7 +7,11 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { useRouter } from "next/navigation"
-import { cocina, type CocinaOrden } from "@/lib/api"
+import {
+  cocina, establecimientos as establecimientosApi,
+  getActiveEstablecimiento, setActiveEstablecimiento, clearActiveEstablecimiento,
+  type CocinaOrden, type Establecimiento,
+} from "@/lib/api"
 import { connectRealtime } from "@/lib/realtime"
 import {
   ArrowLeft,
@@ -18,6 +22,7 @@ import {
   Circle,
   Clock,
   RotateCcw,
+  Store,
 } from "lucide-react"
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -132,10 +137,40 @@ export default function KitchenPage() {
   const prevPendingCount = useRef(0)
   const knownIds = useRef<Set<string>>(new Set())
 
-  // ── No login required — kitchen is open access ────────────────────────────
+  // ── Sucursal de la cocina (sin login, pero sí elige sucursal) ─────────────
+  const [establecimientoId, setEstablecimientoId] = useState<string | null>(null)
+  const [sucursales, setSucursales] = useState<Establecimiento[] | null>(null)
+
   useEffect(() => {
-    setSessionReady(true)
+    const actual = getActiveEstablecimiento("kitchen")
+    if (actual) { setEstablecimientoId(actual); setSessionReady(true); return }
+    // Elegir sucursal (auto si solo hay una)
+    establecimientosApi.getPublicos().then((lista) => {
+      if (lista.length === 1) {
+        setActiveEstablecimiento("kitchen", lista[0].id)
+        setEstablecimientoId(lista[0].id)
+        setSessionReady(true)
+      } else {
+        setSucursales(lista)
+      }
+    }).catch(() => { setSessionReady(true) }) // sin backend: mostrar monitor vacío
   }, [])
+
+  const elegirSucursalCocina = (id: string) => {
+    setActiveEstablecimiento("kitchen", id)
+    setEstablecimientoId(id)
+    setSucursales(null)
+    knownIds.current.clear()
+    setOrders([])
+    setSessionReady(true)
+  }
+
+  const cambiarSucursal = () => {
+    clearActiveEstablecimiento("kitchen")
+    setSessionReady(false)
+    setEstablecimientoId(null)
+    establecimientosApi.getPublicos().then(setSucursales).catch(() => {})
+  }
 
   // ── Live clock: updates every 30 s to refresh elapsed times ───────────────
   useEffect(() => {
@@ -271,6 +306,32 @@ export default function KitchenPage() {
     return full.items.every(i => i.done)
   }
 
+  // ─── Render: selector de sucursal (antes del monitor) ─────────────────────
+  if (sucursales) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md border-border">
+          <CardHeader className="text-center">
+            <div className="w-16 h-16 bg-orange-500/10 rounded-xl flex items-center justify-center mx-auto mb-2">
+              <ChefHat className="w-8 h-8 text-orange-500" />
+            </div>
+            <CardTitle>Monitor de Cocina</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">Seleccione la sucursal</p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {sucursales.map((s) => (
+              <Button key={s.id} variant="outline" className="w-full justify-start h-14 bg-transparent"
+                onClick={() => elegirSucursalCocina(s.id)}>
+                <Store className="w-5 h-5 mr-3 text-orange-500" />
+                <span className="text-base font-medium">{s.nombre}</span>
+              </Button>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background">
@@ -311,6 +372,10 @@ export default function KitchenPage() {
                 <span className="ml-1 hidden sm:inline">{soundEnabled ? "Sonido ON" : "Silencio"}</span>
               </Button>
 
+              <Button variant="outline" size="sm" className="bg-transparent" onClick={cambiarSucursal} title="Cambiar de sucursal">
+                <Store className="w-4 h-4" />
+                <span className="ml-1 hidden sm:inline">Sucursal</span>
+              </Button>
             </div>
           </div>
         </div>

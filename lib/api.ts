@@ -189,6 +189,9 @@ export const establecimientos = {
   // Los que puede usar el usuario autenticado (selector del POS)
   getAll: (module = "pos") =>
     apiFetch<Establecimiento[]>("/establecimientos", { module }),
+  // Lista pública para la cocina (anónima)
+  getPublicos: () =>
+    apiFetch<Establecimiento[]>("/establecimientos/publicos", { module: "kitchen" }),
   getTodos: (module = "admin") =>
     apiFetch<Establecimiento[]>("/establecimientos/todos", { module }),
   create: (data: { nombre: string; direccion?: string; telefono?: string }, module = "admin") =>
@@ -570,19 +573,21 @@ export interface CocinaOrden {
   estado: "abierta" | "en_cocina" | "lista"
 }
 
+// module "kitchen" para que apiFetch mande X-Establecimiento (sucursal de la cocina)
 export const cocina = {
-  getOrdenes: () => apiFetch<CocinaOrden[]>("/cocina/ordenes"),
+  getOrdenes: () => apiFetch<CocinaOrden[]>("/cocina/ordenes", { module: "kitchen" }),
   iniciar: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/cocina/ordenes/${id}/iniciar`, { method: "PATCH" }),
+    apiFetch<{ ok: boolean }>(`/cocina/ordenes/${id}/iniciar`, { method: "PATCH", module: "kitchen" }),
   listo: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/cocina/ordenes/${id}/listo`, { method: "PATCH" }),
+    apiFetch<{ ok: boolean }>(`/cocina/ordenes/${id}/listo`, { method: "PATCH", module: "kitchen" }),
   reiniciar: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/cocina/ordenes/${id}/reiniciar`, { method: "PATCH" }),
+    apiFetch<{ ok: boolean }>(`/cocina/ordenes/${id}/reiniciar`, { method: "PATCH", module: "kitchen" }),
   // KDS por platillo: persiste el estado de cada item en backend
   setItemEstado: (ordenId: string, itemId: number | string, estado: "pendiente" | "en_preparacion" | "listo") =>
     apiFetch<{ ok: boolean }>(`/cocina/ordenes/${ordenId}/items/${itemId}/estado`, {
       method: "PATCH",
       body: JSON.stringify({ estado }),
+      module: "kitchen",
     }),
 }
 
