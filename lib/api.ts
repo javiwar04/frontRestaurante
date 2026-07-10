@@ -996,6 +996,7 @@ export interface ReporteVentas {
   ticketPromedio: number
   porMetodoPago: Record<string, number>
   porDia: { fecha: string; total: number; ordenes: number }[]
+  porEstablecimiento?: { establecimientoId?: string | null; nombre: string; total: number; ordenes: number }[]
 }
 
 export interface ReportePlatillos {
@@ -1021,25 +1022,30 @@ export interface ReporteMeseros {
   }[]
 }
 
-function dateParams(desde?: string, hasta?: string): string {
+function dateParams(desde?: string, hasta?: string, establecimiento?: string): string {
   const p = new URLSearchParams()
   if (desde) p.set("desde", desde)
   if (hasta) p.set("hasta", hasta)
+  if (establecimiento) p.set("establecimiento", establecimiento)
   const s = p.toString()
   return s ? `?${s}` : ""
 }
 
+// establecimientoId: filtra por sucursal; sin él = consolidado del negocio
 export const reportes = {
-  ventas: (desde?: string, hasta?: string, module = "reports") =>
-    apiFetch<ReporteVentas>(`/reportes/ventas${dateParams(desde, hasta)}`, { module }),
-  platillos: (desde?: string, hasta?: string, module = "reports") =>
-    apiFetch<ReportePlatillos>(`/reportes/platillos${dateParams(desde, hasta)}`, { module }),
-  corteCaja: (turnoId?: string, module = "reports") => {
-    const q = turnoId ? `?turnoId=${turnoId}` : ""
-    return apiFetch<CorteInfo>(`/reportes/corte-caja${q}`, { module })
+  ventas: (desde?: string, hasta?: string, module = "reports", establecimientoId?: string) =>
+    apiFetch<ReporteVentas>(`/reportes/ventas${dateParams(desde, hasta, establecimientoId)}`, { module }),
+  platillos: (desde?: string, hasta?: string, module = "reports", establecimientoId?: string) =>
+    apiFetch<ReportePlatillos>(`/reportes/platillos${dateParams(desde, hasta, establecimientoId)}`, { module }),
+  corteCaja: (turnoId?: string, module = "reports", establecimientoId?: string) => {
+    const p = new URLSearchParams()
+    if (turnoId) p.set("turnoId", turnoId)
+    if (establecimientoId) p.set("establecimiento", establecimientoId)
+    const q = p.toString()
+    return apiFetch<CorteInfo>(`/reportes/corte-caja${q ? `?${q}` : ""}`, { module })
   },
-  meseros: (desde?: string, hasta?: string, module = "reports") =>
-    apiFetch<ReporteMeseros>(`/reportes/meseros${dateParams(desde, hasta)}`, { module }),
+  meseros: (desde?: string, hasta?: string, module = "reports", establecimientoId?: string) =>
+    apiFetch<ReporteMeseros>(`/reportes/meseros${dateParams(desde, hasta, establecimientoId)}`, { module }),
 }
 
 // ─── Facturas ─────────────────────────────────────────────────────────────────

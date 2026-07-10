@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   getSession, clearSession, type AuthUser,
-  reportes, type ReporteVentas, type ReportePlatillos, type ReporteMeseros,
+  reportes, establecimientos as establecimientosApi,
+  type ReporteVentas, type ReportePlatillos, type ReporteMeseros, type Establecimiento,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -157,6 +158,8 @@ export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState("summary")
 
   // ── Period filter ──────────────────────────────────────────────────────────
+  const [sucursales, setSucursales] = useState<Establecimiento[]>([])
+  const [filtroSucursal, setFiltroSucursal] = useState<string>("all")   // "all" = consolidado
   const [period, setPeriod] = useState<"today" | "week" | "month" | "range">("today")
   const [rangeFrom, setRangeFrom] = useState("")
   const [rangeTo, setRangeTo] = useState("")
@@ -183,17 +186,24 @@ export default function ReportsPage() {
     } else if (rangeFrom && rangeTo) {
       desde = rangeFrom + "T00:00:00"; hasta = rangeTo + "T23:59:59"
     } else { return }
-    reportes.ventas(desde, hasta).then(setApiVentas).catch((e) => toast({ title: "Error en reporte de ventas", description: String((e as any)?.message ?? e), variant: "destructive" }))
-    reportes.platillos(desde, hasta).then(setApiPlatillos).catch((e) => toast({ title: "Error en reporte de productos", description: String((e as any)?.message ?? e), variant: "destructive" }))
-    reportes.meseros(desde, hasta).then(setApiMeseros).catch((e) => toast({ title: "Error en reporte por mesero", description: String((e as any)?.message ?? e), variant: "destructive" }))
-  }, [user, period, rangeFrom, rangeTo])
+    const est = filtroSucursal === "all" ? undefined : filtroSucursal
+    reportes.ventas(desde, hasta, "reports", est).then(setApiVentas).catch((e) => toast({ title: "Error en reporte de ventas", description: String((e as any)?.message ?? e), variant: "destructive" }))
+    reportes.platillos(desde, hasta, "reports", est).then(setApiPlatillos).catch((e) => toast({ title: "Error en reporte de productos", description: String((e as any)?.message ?? e), variant: "destructive" }))
+    reportes.meseros(desde, hasta, "reports", est).then(setApiMeseros).catch((e) => toast({ title: "Error en reporte por mesero", description: String((e as any)?.message ?? e), variant: "destructive" }))
+  }, [user, period, rangeFrom, rangeTo, filtroSucursal])
 
   useEffect(() => {
     if (!user) return
     const s = new Date(); s.setHours(0, 0, 0, 0)
     const e = new Date(); e.setHours(23, 59, 59, 999)
-    reportes.ventas(toLocalDateTime(s), toLocalDateTime(e)).then(setApiVentasHoy).catch(() => {})
-    reportes.platillos(toLocalDateTime(s), toLocalDateTime(e)).then(setApiPlatillosHoy).catch(() => {})
+    const est = filtroSucursal === "all" ? undefined : filtroSucursal
+    reportes.ventas(toLocalDateTime(s), toLocalDateTime(e), "reports", est).then(setApiVentasHoy).catch(() => {})
+    reportes.platillos(toLocalDateTime(s), toLocalDateTime(e), "reports", est).then(setApiPlatillosHoy).catch(() => {})
+  }, [user, filtroSucursal])
+
+  useEffect(() => {
+    if (!user) return
+    establecimientosApi.getAll("reports").then(setSucursales).catch(() => {})
   }, [user])
 
   const logout = () => {
@@ -310,6 +320,15 @@ export default function ReportsPage() {
           <Input type="date" className="h-8 w-36" value={rangeTo} onChange={e => setRangeTo(e.target.value)} />
         </>
       )}
+      {sucursales.length > 0 && (
+        <Select value={filtroSucursal} onValueChange={setFiltroSucursal}>
+          <SelectTrigger className="h-8 w-44"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas las sucursales</SelectItem>
+            {sucursales.map(s => <SelectItem key={s.id} value={s.id}>{s.nombre}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
       <span className="text-xs text-muted-foreground">{apiVentas?.totalOrdenes ?? 0} tickets</span>
     </div>
   )
@@ -353,6 +372,30 @@ export default function ReportsPage() {
               <h2 className="text-base font-semibold">Resumen de hoy</h2>
               <Badge variant="outline" className="gap-1"><CalendarDays className="w-3 h-3" />{toDateStr(today.toISOString())}</Badge>
             </div>
+
+            {/* Ventas por sucursal (consolidado del negocio) */}
+            {filtroSucursal === "all" && (apiVentas?.porEstablecimiento?.length ?? 0) > 1 && (
+              <Card className="border-border">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Ventas por sucursal</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                  {(() => {
+                    const items = apiVentas!.porEstablecimiento!
+                    const max = Math.max(1, ...items.map(e => e.total))
+                    return items.map((e) => (
+                      <div key={e.establecimientoId ?? e.nombre} className="space-y-1">
+                        <div className="flex justify-between text-sm">
+                          <span className="font-medium">{e.nombre}</span>
+                          <span>Q{e.total.toFixed(2)} · {e.ordenes} tickets</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full bg-primary" style={{ width: `${(e.total / max) * 100}%` }} />
+                        </div>
+                      </div>
+                    ))
+                  })()}
+                </CardContent>
+              </Card>
+            )}
 
             {/* KPI cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
