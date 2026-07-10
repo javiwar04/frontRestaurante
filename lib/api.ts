@@ -768,14 +768,14 @@ export interface ComandaTicketResponse {
 }
 
 export const config = {
-  getNegocio: (module = "admin") =>
-    apiFetch<ConfigNegocio>("/config/negocio", { module }),
+  getNegocio: (module = "admin", establecimientoId?: string) =>
+    apiFetch<ConfigNegocio>(`/config/negocio${establecimientoId ? `?establecimiento=${encodeURIComponent(establecimientoId)}` : ""}`, { module }),
   updateNegocio: (data: Partial<ConfigNegocio>, module = "admin") =>
     apiFetch<ConfigNegocio>("/config/negocio", { method: "PUT", body: JSON.stringify(data), module }),
-  getImpuestos: (module = "admin") =>
-    apiFetch<ConfigImpuestos>("/config/impuestos", { module }),
-  updateImpuestos: (data: Partial<ConfigImpuestos>, module = "admin") =>
-    apiFetch<ConfigImpuestos>("/config/impuestos", { method: "PUT", body: JSON.stringify(data), module }),
+  getImpuestos: (module = "admin", establecimientoId?: string) =>
+    apiFetch<ConfigImpuestos>(`/config/impuestos${establecimientoId ? `?establecimiento=${encodeURIComponent(establecimientoId)}` : ""}`, { module }),
+  updateImpuestos: (data: Partial<ConfigImpuestos>, module = "admin", establecimientoId?: string) =>
+    apiFetch<ConfigImpuestos>(`/config/impuestos${establecimientoId ? `?establecimiento=${encodeURIComponent(establecimientoId)}` : ""}`, { method: "PUT", body: JSON.stringify(data), module }),
   getMetodosPago: (module = "admin") =>
     apiFetch<MetodoPago[]>("/config/metodos-pago", { module }),
   createMetodoPago: (data: CreateMetodoPagoRequest, module = "admin") =>

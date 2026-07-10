@@ -114,6 +114,7 @@ export default function POSPage() {
   // Se captura en el diálogo de pago; el backend la persiste en la orden.
   const [tipAmount, setTipAmount] = useState(0)
   const [suggestedTipPct, setSuggestedTipPct] = useState(10)
+  const [tipEnabled, setTipEnabled] = useState(true)   // propina activa según config de la sucursal
 
   // Tasa de IVA — se carga desde /config/impuestos para coincidir con el backend
   const [TAX_RATE, setTaxRate] = useState(0.12)
@@ -505,6 +506,7 @@ export default function POSPage() {
       if (typeof c?.propinaSugerida === "number" && c.propinaSugerida > 0 && c.propinaSugerida <= 100) {
         setSuggestedTipPct(c.propinaSugerida)
       }
+      setTipEnabled(c?.propinaActiva !== false)
     }).catch(() => { /* mantener defaults */ })
   }, [sessionReady])
 
@@ -2005,7 +2007,8 @@ export default function POSPage() {
             </ScrollArea>
             <Separator />
 
-            {/* Propina */}
+            {/* Propina (solo si está activa en la config de la sucursal) */}
+            {tipEnabled && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Propina</Label>
@@ -2031,6 +2034,7 @@ export default function POSPage() {
                 </div>
               </div>
             </div>
+            )}
 
             <Separator />
             <div className="space-y-1 text-sm">

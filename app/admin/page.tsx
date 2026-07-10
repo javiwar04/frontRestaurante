@@ -333,7 +333,10 @@ export default function AdminPage() {
       setCategories(list.map(c => ({ id: c.id, name: c.nombre, order: c.orden, active: c.activa })))
     ).catch(() => {})
 
-    establecimientosApi.getTodos("admin").then(setSucursalesAdmin).catch(() => {})
+    establecimientosApi.getTodos("admin").then(list => {
+      setSucursalesAdmin(list)
+      if (list.length > 0) setTaxEstablecimiento(prev => prev || list[0].id)
+    }).catch(() => {})
 
     platillosApi.getAll("admin").then(list =>
       setMenuItems(list.map(p => ({
@@ -377,18 +380,6 @@ export default function AdminPage() {
       }))
     ).catch(() => {})
 
-    config.getImpuestos().then(cfg =>
-      setTaxConfig(prev => ({
-        ...prev,
-        ivaEnabled: cfg.ivaActivo,
-        ivaRate: cfg.ivaPorcentaje,
-        ivaIncluded: cfg.preciosConIva,
-        tipEnabled: cfg.propinaActiva ?? prev.tipEnabled,
-        tipSuggested: cfg.propinaSugerida ?? prev.tipSuggested,
-        serviceChargeEnabled: cfg.cargoServicioActivo ?? prev.serviceChargeEnabled,
-        serviceChargeRate: cfg.cargoServicioPorcentaje ?? prev.serviceChargeRate,
-      }))
-    ).catch(() => {})
 
     config.getComandas({ porPagina: 300 }).then(list => {
       setTickets(list.map(mapComandaToTicket))
@@ -409,6 +400,25 @@ export default function AdminPage() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [business, setBusiness] = useState<BusinessConfig>(defaultBusiness)
   const [taxConfig, setTaxConfig] = useState<TaxConfig>(defaultTax)
+  // Sucursal seleccionada para editar su config de impuestos/propina
+  const [taxEstablecimiento, setTaxEstablecimiento] = useState<string>("")
+
+  // Cargar la config de impuestos de la sucursal seleccionada
+  useEffect(() => {
+    if (!taxEstablecimiento) return
+    config.getImpuestos("admin", taxEstablecimiento).then(cfg =>
+      setTaxConfig(prev => ({
+        ...prev,
+        ivaEnabled: cfg.ivaActivo,
+        ivaRate: cfg.ivaPorcentaje,
+        ivaIncluded: cfg.preciosConIva,
+        tipEnabled: cfg.propinaActiva ?? prev.tipEnabled,
+        tipSuggested: cfg.propinaSugerida ?? prev.tipSuggested,
+        serviceChargeEnabled: cfg.cargoServicioActivo ?? prev.serviceChargeEnabled,
+        serviceChargeRate: cfg.cargoServicioPorcentaje ?? prev.serviceChargeRate,
+      }))
+    ).catch(() => {})
+  }, [taxEstablecimiento])
   const [activeTab, setActiveTab] = useState("dashboard")
 
   // ── Auditoría ──────────────────────────────────────────────────────────────
@@ -1232,9 +1242,19 @@ export default function AdminPage() {
 
           {/* ══ IMPUESTOS Y PROPINA ══ */}
           <TabsContent value="taxes" className="space-y-4 max-w-xl">
-            <div>
-              <h2 className="text-base font-semibold">Impuestos y propina</h2>
-              <p className="text-xs text-muted-foreground">Configuración de IVA, propina sugerida y cargos automáticos</p>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <h2 className="text-base font-semibold">Impuestos y propina</h2>
+                <p className="text-xs text-muted-foreground">Por sucursal: IVA, propina y cargos</p>
+              </div>
+              {sucursalesAdmin.length > 0 && (
+                <Select value={taxEstablecimiento} onValueChange={setTaxEstablecimiento}>
+                  <SelectTrigger className="w-48"><SelectValue placeholder="Sucursal" /></SelectTrigger>
+                  <SelectContent>
+                    {sucursalesAdmin.map(s => <SelectItem key={s.id} value={s.id}>{s.nombre}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <Card className="border-border">
@@ -1377,10 +1397,10 @@ export default function AdminPage() {
                 propinaSugerida: taxConfig.tipSuggested,
                 cargoServicioActivo: taxConfig.serviceChargeEnabled,
                 cargoServicioPorcentaje: taxConfig.serviceChargeRate,
-              })
-                .then(() => toast({ title: "Configuración de impuestos guardada" }))
+              }, "admin", taxEstablecimiento)
+                .then(() => toast({ title: "Configuración guardada para esta sucursal" }))
                 .catch(e => toast({ title: "Error", description: String(e), variant: "destructive" }))
-            }} className="w-full">
+            }} className="w-full" disabled={!taxEstablecimiento}>
               Guardar configuración
             </Button>
           </TabsContent>
