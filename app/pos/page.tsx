@@ -2397,6 +2397,7 @@ export default function POSPage() {
                     <th className="py-2">Insumo</th>
                     <th className="w-20 text-center">Encontré</th>
                     <th className="w-20 text-center">Ingreso</th>
+                    <th className="w-16 text-center">Vendido</th>
                     <th className="w-20 text-center">Quedó</th>
                     <th className="w-24 text-right">Merma</th>
                   </tr>
@@ -2412,6 +2413,7 @@ export default function POSPage() {
                           onChange={(e) => setConteoField(r.insumoId, "encontreStr", e.target.value)} /></td>
                         <td><Input type="number" step="0.01" className="h-8 text-center" value={r.ingresoStr}
                           onChange={(e) => setConteoField(r.insumoId, "ingresoStr", e.target.value)} /></td>
+                        <td className="text-center text-muted-foreground" title="Vendido en el turno (según recetas)">{r.vendidoTeorico}</td>
                         <td><Input type="number" step="0.01" className="h-8 text-center" value={r.quedoStr}
                           onChange={(e) => setConteoField(r.insumoId, "quedoStr", e.target.value)} /></td>
                         <td className={`text-right font-medium ${Math.abs(merma) > 0.001 ? "text-destructive" : "text-green-600"}`}>
