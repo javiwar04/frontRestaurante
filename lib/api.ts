@@ -261,6 +261,7 @@ export interface Platillo {
   categoriaNombre?: string
   disponible: boolean
   imagen?: string
+  establecimientos?: string[]   // ids de sucursales donde se ofrece
   modificadores: ModificadorGrupo[]
   creadoEn: string
 }
@@ -292,12 +293,16 @@ export interface CreatePlatilloRequest {
   categoriaId: string
   disponible?: boolean
   imagen?: string
+  establecimientoIds?: string[]   // sucursales donde se ofrece
   modificadores?: CreateModificadorGrupoRequest[]
 }
 
 export const platillos = {
-  getAll: (module = "pos") =>
-    apiFetch<Platillo[]>("/platillos", { module }),
+  // establecimientoId: filtro explícito (admin); sin él, el header del módulo
+  getAll: (module = "pos", establecimientoId?: string) => {
+    const q = establecimientoId ? `?establecimiento=${encodeURIComponent(establecimientoId)}` : ""
+    return apiFetch<Platillo[]>(`/platillos${q}`, { module })
+  },
   getOne: (id: string, module = "pos") =>
     apiFetch<Platillo>(`/platillos/${id}`, { module }),
   create: (data: CreatePlatilloRequest, module = "admin") =>

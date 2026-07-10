@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   getSession, clearSession, type AuthUser,
   usuarios, categoriasMenu, platillos as platillosApi, secciones, mesas, config, auditoria,
+  establecimientos as establecimientosApi, type Establecimiento,
   type Usuario, type AuditoriaEntry, type Seccion, type ComandaAdmin,
   type ModificadorGrupo, type ModificadorOpcion,
 } from "@/lib/api"
@@ -107,6 +108,7 @@ interface MenuItem {
   price: number
   description: string
   available: boolean
+  establecimientoIds: string[]   // sucursales donde se ofrece
   modificadores: ModificadorGrupo[]
 }
 
@@ -202,16 +204,16 @@ const seedCategories: MenuCategory[] = [
 ]
 
 const seedMenuItems: MenuItem[] = [
-  { id: "mi1", categoryId: "c1", name: "Ensalada César", price: 9.99, description: "Lechuga romana, crutones, parmesano", available: true, modificadores: [] },
-  { id: "mi2", categoryId: "c1", name: "Alitas de Pollo", price: 10.99, description: "Con salsa BBQ o búfalo", available: true, modificadores: [] },
-  { id: "mi3", categoryId: "c2", name: "Hamburguesa Clásica", price: 12.99, description: "Carne de res, lechuga, jitomate, queso", available: true, modificadores: [] },
-  { id: "mi4", categoryId: "c2", name: "Pizza Margarita", price: 14.99, description: "Salsa de tomate, queso mozzarella, albahaca", available: true, modificadores: [] },
-  { id: "mi5", categoryId: "c2", name: "Pasta Carbonara", price: 13.99, description: "Pasta, tocino, huevo, parmesano", available: true, modificadores: [] },
-  { id: "mi6", categoryId: "c3", name: "Tiramisú", price: 6.99, description: "Postre italiano clásico", available: true, modificadores: [] },
-  { id: "mi7", categoryId: "c3", name: "Helado", price: 5.99, description: "3 sabores a elegir", available: true, modificadores: [] },
-  { id: "mi8", categoryId: "c4", name: "Coca Cola", price: 2.99, description: "600 ml", available: true, modificadores: [] },
-  { id: "mi9", categoryId: "c4", name: "Agua Mineral", price: 1.99, description: "500 ml", available: true, modificadores: [] },
-  { id: "mi10", categoryId: "c4", name: "Cerveza", price: 4.99, description: "355 ml", available: true, modificadores: [] },
+  { id: "mi1", categoryId: "c1", name: "Ensalada César", price: 9.99, description: "Lechuga romana, crutones, parmesano", available: true, establecimientoIds: [], modificadores: [] },
+  { id: "mi2", categoryId: "c1", name: "Alitas de Pollo", price: 10.99, description: "Con salsa BBQ o búfalo", available: true, establecimientoIds: [], modificadores: [] },
+  { id: "mi3", categoryId: "c2", name: "Hamburguesa Clásica", price: 12.99, description: "Carne de res, lechuga, jitomate, queso", available: true, establecimientoIds: [], modificadores: [] },
+  { id: "mi4", categoryId: "c2", name: "Pizza Margarita", price: 14.99, description: "Salsa de tomate, queso mozzarella, albahaca", available: true, establecimientoIds: [], modificadores: [] },
+  { id: "mi5", categoryId: "c2", name: "Pasta Carbonara", price: 13.99, description: "Pasta, tocino, huevo, parmesano", available: true, establecimientoIds: [], modificadores: [] },
+  { id: "mi6", categoryId: "c3", name: "Tiramisú", price: 6.99, description: "Postre italiano clásico", available: true, establecimientoIds: [], modificadores: [] },
+  { id: "mi7", categoryId: "c3", name: "Helado", price: 5.99, description: "3 sabores a elegir", available: true, establecimientoIds: [], modificadores: [] },
+  { id: "mi8", categoryId: "c4", name: "Coca Cola", price: 2.99, description: "600 ml", available: true, establecimientoIds: [], modificadores: [] },
+  { id: "mi9", categoryId: "c4", name: "Agua Mineral", price: 1.99, description: "500 ml", available: true, establecimientoIds: [], modificadores: [] },
+  { id: "mi10", categoryId: "c4", name: "Cerveza", price: 4.99, description: "355 ml", available: true, establecimientoIds: [], modificadores: [] },
 ]
 
 const seedPaymentMethods: PaymentMethod[] = [
@@ -306,7 +308,7 @@ const TABLE_SECTIONS = ["Interior", "Terraza", "Barra", "Privado", "Jardín", "L
 // ─── Blank helpers ─────────────────────────────────────────────────────────────
 const blankUser = (): Omit<AppUser, "id"> => ({ name: "", username: "", pin: "", role: "", modules: [], active: true, notes: "" })
 const blankTable = (): Omit<TableDef, "id"> => ({ number: 0, capacity: 2, section: "", seccionId: "", active: true, notes: "" })
-const blankMenuItem = (): Omit<MenuItem, "id"> => ({ categoryId: "", name: "", price: 0, description: "", available: true, modificadores: [] })
+const blankMenuItem = (): Omit<MenuItem, "id"> => ({ categoryId: "", name: "", price: 0, description: "", available: true, establecimientoIds: [], modificadores: [] })
 const blankCategory = (): Omit<MenuCategory, "id"> => ({ name: "", order: 99, active: true })
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -331,10 +333,13 @@ export default function AdminPage() {
       setCategories(list.map(c => ({ id: c.id, name: c.nombre, order: c.orden, active: c.activa })))
     ).catch(() => {})
 
+    establecimientosApi.getTodos("admin").then(setSucursalesAdmin).catch(() => {})
+
     platillosApi.getAll("admin").then(list =>
       setMenuItems(list.map(p => ({
         id: p.id, categoryId: p.categoriaId, name: p.nombre, price: p.precio,
         description: p.descripcion ?? "", available: p.disponible,
+        establecimientoIds: p.establecimientos ?? [],
         modificadores: (p.modificadores || []).map(g => ({
           ...g,
           obligatorio: g.obligatorio ?? false,
@@ -607,11 +612,23 @@ export default function AdminPage() {
   const [showMenuItemDialog, setShowMenuItemDialog] = useState(false)
   const [editingMenuItem, setEditingMenuItem] = useState<MenuItem | null>(null)
   const [menuItemForm, setMenuItemForm] = useState(blankMenuItem())
+  const [sucursalesAdmin, setSucursalesAdmin] = useState<Establecimiento[]>([])
 
-  const openNewMenuItem = (catId = "") => { setEditingMenuItem(null); setMenuItemForm({ ...blankMenuItem(), categoryId: catId }); setShowMenuItemDialog(true) }
-  const openEditMenuItem = (m: MenuItem) => {
-    setEditingMenuItem(m); setMenuItemForm({ categoryId: m.categoryId, name: m.name, price: m.price, description: m.description, available: m.available, modificadores: m.modificadores || [] }); setShowMenuItemDialog(true)
+  const openNewMenuItem = (catId = "") => {
+    setEditingMenuItem(null)
+    // Nuevo platillo: por defecto disponible en TODAS las sucursales
+    setMenuItemForm({ ...blankMenuItem(), categoryId: catId, establecimientoIds: sucursalesAdmin.map(s => s.id) })
+    setShowMenuItemDialog(true)
   }
+  const openEditMenuItem = (m: MenuItem) => {
+    setEditingMenuItem(m); setMenuItemForm({ categoryId: m.categoryId, name: m.name, price: m.price, description: m.description, available: m.available, establecimientoIds: m.establecimientoIds || [], modificadores: m.modificadores || [] }); setShowMenuItemDialog(true)
+  }
+  const toggleMenuItemSucursal = (id: string) => setMenuItemForm(p => ({
+    ...p,
+    establecimientoIds: p.establecimientoIds.includes(id)
+      ? p.establecimientoIds.filter(x => x !== id)
+      : [...p.establecimientoIds, id],
+  }))
   const [savingMenuItem, setSavingMenuItem] = useState(false)
   const saveMenuItem = () => {
     if (savingMenuItem) return
@@ -633,7 +650,7 @@ export default function AdminPage() {
         orden: oi,
       })),
     }))
-    const payload = { nombre: menuItemForm.name, precio: menuItemForm.price, descripcion: menuItemForm.description, categoriaId: menuItemForm.categoryId, disponible: menuItemForm.available, modificadores: modsPayload }
+    const payload = { nombre: menuItemForm.name, precio: menuItemForm.price, descripcion: menuItemForm.description, categoriaId: menuItemForm.categoryId, disponible: menuItemForm.available, establecimientoIds: menuItemForm.establecimientoIds, modificadores: modsPayload }
     setSavingMenuItem(true)
     if (editingMenuItem) {
       platillosApi.update(editingMenuItem.id, payload).then(() => {
@@ -2056,6 +2073,27 @@ export default function AdminPage() {
               <Switch checked={menuItemForm.available} onCheckedChange={v => setMenuItemForm(p => ({ ...p, available: v }))} />
               <Label>Disponible en el POS</Label>
             </div>
+
+            {/* ── Sucursales donde se ofrece ──────────────────────────── */}
+            {sucursalesAdmin.length > 0 && (
+              <div className="space-y-2">
+                <Label>Sucursales donde se ofrece</Label>
+                <div className="flex flex-wrap gap-3">
+                  {sucursalesAdmin.map(s => (
+                    <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer border rounded-md px-3 py-2">
+                      <Checkbox
+                        checked={menuItemForm.establecimientoIds.includes(s.id)}
+                        onCheckedChange={() => toggleMenuItemSucursal(s.id)}
+                      />
+                      {s.nombre}
+                    </label>
+                  ))}
+                </div>
+                {menuItemForm.establecimientoIds.length === 0 && (
+                  <p className="text-xs text-amber-500">Sin sucursales, este platillo no aparecerá en ningún POS.</p>
+                )}
+              </div>
+            )}
 
             {/* ── Modifier Groups ─────────────────────────────────────── */}
             <Separator />
