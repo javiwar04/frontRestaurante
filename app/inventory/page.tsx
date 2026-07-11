@@ -529,8 +529,8 @@ export default function InventoryPage() {
                     <div className="text-xs text-muted-foreground mb-1">Insumos activos</div>
                     <div className="text-2xl font-bold">{ingredients.filter(i => i.active).length}</div>
                   </div>
-                  <div className="rounded-lg bg-blue-500/10 p-2 mt-0.5 shrink-0">
-                    <ShoppingCart className="w-5 h-5 text-blue-500" />
+                  <div className="rounded-lg bg-chart-2/15 p-2 mt-0.5 shrink-0">
+                    <ShoppingCart className="w-5 h-5 text-chart-2" />
                   </div>
                 </CardContent>
               </Card>
@@ -540,8 +540,8 @@ export default function InventoryPage() {
                     <div className="text-xs text-muted-foreground mb-1">Valor del inventario</div>
                     <div className="text-2xl font-bold text-primary">Q{totalInventoryValue.toFixed(2)}</div>
                   </div>
-                  <div className="rounded-lg bg-green-500/10 p-2 mt-0.5 shrink-0">
-                    <TrendingUp className="w-5 h-5 text-green-500" />
+                  <div className="rounded-lg bg-chart-1/15 p-2 mt-0.5 shrink-0">
+                    <TrendingUp className="w-5 h-5 text-chart-1" />
                   </div>
                 </CardContent>
               </Card>
@@ -551,8 +551,8 @@ export default function InventoryPage() {
                     <div className="text-xs text-muted-foreground mb-1">Platillos activos</div>
                     <div className="text-2xl font-bold">{menuItems.filter(m => m.active).length}</div>
                   </div>
-                  <div className="rounded-lg bg-purple-500/10 p-2 mt-0.5 shrink-0">
-                    <UtensilsCrossed className="w-5 h-5 text-purple-500" />
+                  <div className="rounded-lg bg-chart-3/15 p-2 mt-0.5 shrink-0">
+                    <UtensilsCrossed className="w-5 h-5 text-chart-3" />
                   </div>
                 </CardContent>
               </Card>

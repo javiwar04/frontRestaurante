@@ -113,17 +113,26 @@ export function DashboardLive({ module = "admin" }: { module?: string }) {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card><CardContent className="p-4">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground"><DollarSign className="w-4 h-4" />Ventas del día</div>
-          <div className="text-2xl font-bold mt-1">{fmtQ(kpis.totalVentas)}</div>
+        <Card><CardContent className="p-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-muted-foreground">Ventas del día</div>
+            <div className="text-2xl font-bold mt-1 truncate">{fmtQ(kpis.totalVentas)}</div>
+          </div>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-chart-1/15 text-chart-1"><DollarSign className="w-5 h-5" /></div>
         </CardContent></Card>
-        <Card><CardContent className="p-4">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground"><Receipt className="w-4 h-4" />Órdenes</div>
-          <div className="text-2xl font-bold mt-1">{kpis.totalOrdenes}</div>
+        <Card><CardContent className="p-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-muted-foreground">Órdenes</div>
+            <div className="text-2xl font-bold mt-1">{kpis.totalOrdenes}</div>
+          </div>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-chart-2/15 text-chart-2"><Receipt className="w-5 h-5" /></div>
         </CardContent></Card>
-        <Card><CardContent className="p-4">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground"><TrendingUp className="w-4 h-4" />Ticket promedio</div>
-          <div className="text-2xl font-bold mt-1">{fmtQ(kpis.ticket)}</div>
+        <Card><CardContent className="p-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-muted-foreground">Ticket promedio</div>
+            <div className="text-2xl font-bold mt-1 truncate">{fmtQ(kpis.ticket)}</div>
+          </div>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-chart-3/15 text-chart-3"><TrendingUp className="w-5 h-5" /></div>
         </CardContent></Card>
         <Card><CardContent className="p-4">
           <div className="text-xs text-muted-foreground mb-1">Por método</div>
