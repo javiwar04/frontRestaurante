@@ -1,10 +1,14 @@
 /**
  * API client for RestSF backend
- * Base URL: http://localhost:5006
  * Auth: JWT Bearer token stored per-module in localStorage
+ *
+ * La URL del backend se toma de NEXT_PUBLIC_API_BASE (se define en Vercel,
+ * p.ej. https://api.warforgegt.com). En desarrollo, si no está, usa el
+ * backend local. Ojo: en producción DEBE ser https, o el navegador bloquea
+ * el contenido mixto (Vercel sirve por https).
  */
-
-export const API_BASE = "http://localhost:5006"
+export const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "http://localhost:5006"
 
 // ─── Session helpers ─────────────────────────────────────────────────────────
 
