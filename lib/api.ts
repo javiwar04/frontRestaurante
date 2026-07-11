@@ -361,9 +361,13 @@ export interface Seccion {
 }
 
 export const secciones = {
-  getAll: (module = "pos") =>
-    apiFetch<Seccion[]>("/secciones", { module }),
-  create: (data: { nombre: string; orden?: number; activa?: boolean }, module = "admin") =>
+  // establecimientoId: filtra por sucursal (admin); sin él, el header del módulo
+  getAll: (module = "pos", establecimientoId?: string) => {
+    const q = establecimientoId ? `?establecimiento=${encodeURIComponent(establecimientoId)}` : ""
+    return apiFetch<Seccion[]>(`/secciones${q}`, { module })
+  },
+  // establecimientoId en el body: el backend crea la sección en esa sucursal
+  create: (data: { nombre: string; orden?: number; activa?: boolean; establecimientoId?: string }, module = "admin") =>
     apiFetch<Seccion>("/secciones", { method: "POST", body: JSON.stringify(data), module }),
   update: (id: string, data: { nombre?: string; orden?: number; activa?: boolean }, module = "admin") =>
     apiFetch<Seccion>(`/secciones/${id}`, { method: "PUT", body: JSON.stringify(data), module }),

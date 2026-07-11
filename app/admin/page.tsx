@@ -335,7 +335,11 @@ export default function AdminPage() {
 
     establecimientosApi.getTodos("admin").then(list => {
       setSucursalesAdmin(list)
-      if (list.length > 0) setTaxEstablecimiento(prev => prev || list[0].id)
+      if (list.length > 0) {
+        setTaxEstablecimiento(prev => prev || list[0].id)
+        // Sucursal activa para gestionar mesas/secciones (por defecto la 1ª)
+        setTableEstablecimiento(prev => prev || list[0].id)
+      }
     }).catch(() => {})
 
     platillosApi.getAll("admin").then(list =>
@@ -353,13 +357,8 @@ export default function AdminPage() {
       })))
     ).catch(() => {})
 
-    secciones.getAll("admin").then(secs => {
-      setRawSecciones(secs)
-      const allMesas = secs.flatMap(s =>
-        s.mesas.map(m => ({ id: m.id, number: m.numero, capacity: m.capacidad, section: s.nombre, seccionId: s.id, active: true, notes: m.notas ?? "" }))
-      )
-      setTables(allMesas)
-    }).catch(() => {})
+    // Las secciones/mesas se cargan en un efecto aparte (dependen de la
+    // sucursal activa seleccionada en la pestaña Mesas).
 
     config.getMetodosPago().then(list =>
       setPaymentMethods(list.map(m => ({ id: m.id, name: m.nombre, active: m.activo, requiresReference: m.requiereReferencia })))
@@ -402,6 +401,19 @@ export default function AdminPage() {
   const [taxConfig, setTaxConfig] = useState<TaxConfig>(defaultTax)
   // Sucursal seleccionada para editar su config de impuestos/propina
   const [taxEstablecimiento, setTaxEstablecimiento] = useState<string>("")
+  // Sucursal activa para gestionar mesas/secciones (cada mesa pertenece a una)
+  const [tableEstablecimiento, setTableEstablecimiento] = useState<string>("")
+
+  // Cargar secciones + mesas de la sucursal activa. Se re-ejecuta al cambiarla.
+  useEffect(() => {
+    if (!tableEstablecimiento) { setRawSecciones([]); setTables([]); return }
+    secciones.getAll("admin", tableEstablecimiento).then(secs => {
+      setRawSecciones(secs)
+      setTables(secs.flatMap(s =>
+        s.mesas.map(m => ({ id: m.id, number: m.numero, capacity: m.capacidad, section: s.nombre, seccionId: s.id, active: true, notes: m.notas ?? "" }))
+      ))
+    }).catch(() => {})
+  }, [tableEstablecimiento])
 
   // Cargar la config de impuestos de la sucursal seleccionada
   useEffect(() => {
@@ -563,7 +575,8 @@ export default function AdminPage() {
         })
         .catch(e => toast({ title: "Error al actualizar sección", description: e.message ?? String(e), variant: "destructive" }))
     } else {
-      secciones.create({ nombre: seccionForm.nombre, orden: seccionForm.orden })
+      if (!tableEstablecimiento) { toast({ title: "Selecciona una sucursal primero" }); return }
+      secciones.create({ nombre: seccionForm.nombre, orden: seccionForm.orden, establecimientoId: tableEstablecimiento })
         .then(s => {
           setRawSecciones(prev => [...prev, s])
           toast({ title: "Sección creada" })
@@ -583,6 +596,53 @@ export default function AdminPage() {
         toast({ title: "Sección eliminada" })
       })
       .catch(e => toast({ title: "Error al eliminar sección", description: e.message ?? String(e), variant: "destructive" }))
+  }
+
+  // ── Sucursales dialog ────────────────────────────────────────────────────────
+  const [showSucursalDialog, setShowSucursalDialog] = useState(false)
+  const [editingSucursal, setEditingSucursal] = useState<Establecimiento | null>(null)
+  const [sucursalForm, setSucursalForm] = useState({ nombre: "", direccion: "", telefono: "" })
+
+  const openNewSucursal = () => {
+    setEditingSucursal(null)
+    setSucursalForm({ nombre: "", direccion: "", telefono: "" })
+    setShowSucursalDialog(true)
+  }
+  const openEditSucursal = (s: Establecimiento) => {
+    setEditingSucursal(s)
+    setSucursalForm({ nombre: s.nombre, direccion: s.direccion ?? "", telefono: s.telefono ?? "" })
+    setShowSucursalDialog(true)
+  }
+  const saveSucursal = () => {
+    if (!sucursalForm.nombre.trim()) { toast({ title: "El nombre es requerido" }); return }
+    if (editingSucursal) {
+      establecimientosApi.update(editingSucursal.id, sucursalForm)
+        .then(updated => {
+          setSucursalesAdmin(prev => prev.map(s => s.id === updated.id ? updated : s))
+          toast({ title: "Sucursal actualizada" })
+          setShowSucursalDialog(false)
+        })
+        .catch(e => toast({ title: "Error al actualizar sucursal", description: e.message ?? String(e), variant: "destructive" }))
+    } else {
+      establecimientosApi.create(sucursalForm)
+        .then(created => {
+          setSucursalesAdmin(prev => [...prev, created])
+          // Si es la primera sucursal, dejarla activa para mesas e impuestos
+          setTableEstablecimiento(prev => prev || created.id)
+          setTaxEstablecimiento(prev => prev || created.id)
+          toast({ title: "Sucursal creada" })
+          setShowSucursalDialog(false)
+        })
+        .catch(e => toast({ title: "Error al crear sucursal", description: e.message ?? String(e), variant: "destructive" }))
+    }
+  }
+  const toggleSucursalActiva = (s: Establecimiento) => {
+    establecimientosApi.update(s.id, { activo: !s.activo })
+      .then(updated => {
+        setSucursalesAdmin(prev => prev.map(x => x.id === updated.id ? updated : x))
+        toast({ title: updated.activo ? "Sucursal activada" : "Sucursal desactivada" })
+      })
+      .catch(e => toast({ title: "Error", description: e.message ?? String(e), variant: "destructive" }))
   }
 
   // ── Menu dialogs ────────────────────────────────────────────────────────────
@@ -966,6 +1026,7 @@ export default function AdminPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-10 mb-6">
             <TabsTrigger value="dashboard"><LayoutDashboard className="w-4 h-4 mr-1 hidden sm:inline" />Dashboard</TabsTrigger>
+            <TabsTrigger value="sucursales"><Building2 className="w-4 h-4 mr-1 hidden sm:inline" />Sucursales</TabsTrigger>
             <TabsTrigger value="inventory"><Package className="w-4 h-4 mr-1 hidden sm:inline" />Inventario</TabsTrigger>
             <TabsTrigger value="users"><Users className="w-4 h-4 mr-1 hidden sm:inline" />Usuarios</TabsTrigger>
             <TabsTrigger value="tables"><LayoutGrid className="w-4 h-4 mr-1 hidden sm:inline" />Mesas</TabsTrigger>
@@ -1035,14 +1096,75 @@ export default function AdminPage() {
           </TabsContent>
 
           {/* ══ MESAS ══ */}
+          {/* ══ SUCURSALES ══ */}
+          <TabsContent value="sucursales" className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold">Sucursales</h2>
+                <p className="text-xs text-muted-foreground">{sucursalesAdmin.length} sucursales · cada mesa, inventario y caja pertenece a una</p>
+              </div>
+              <Button size="sm" onClick={openNewSucursal}><Plus className="w-4 h-4 mr-1" />Nueva sucursal</Button>
+            </div>
+            {sucursalesAdmin.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-center">
+                <Building2 className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground">Aún no hay sucursales. Crea la primera para poder darle mesas, menú e inventario.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {sucursalesAdmin.map(s => (
+                  <Card key={s.id} className={`border-border ${!s.activo ? "opacity-60" : ""}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold truncate">{s.nombre}</span>
+                            {!s.activo && <Badge variant="outline" className="text-xs">Inactiva</Badge>}
+                          </div>
+                          {s.direccion && <p className="text-xs text-muted-foreground mt-0.5 truncate">{s.direccion}</p>}
+                          {s.telefono && <p className="text-xs text-muted-foreground truncate">{s.telefono}</p>}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEditSucursal(s)}><Pencil className="w-3.5 h-3.5" /></Button>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                        <span className="text-xs text-muted-foreground">{s.activo ? "Operando" : "Fuera de servicio"}</span>
+                        <Switch checked={s.activo} onCheckedChange={() => toggleSucursalActiva(s)} />
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
           <TabsContent value="tables" className="space-y-4">
+            {/* Selector de sucursal activa: las mesas/secciones pertenecen a ella */}
+            <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                <span className="text-sm font-medium shrink-0">Gestionando la sucursal:</span>
+              </div>
+              <Select value={tableEstablecimiento} onValueChange={setTableEstablecimiento}>
+                <SelectTrigger className="w-56"><SelectValue placeholder="Elige una sucursal" /></SelectTrigger>
+                <SelectContent>
+                  {sucursalesAdmin.map(s => <SelectItem key={s.id} value={s.id}>{s.nombre}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {sucursalesAdmin.length === 0 && (
+              <div className="rounded-lg border border-dashed p-6 text-center">
+                <p className="text-sm text-muted-foreground">Primero crea una sucursal en la pestaña <span className="font-medium">Sucursales</span>.</p>
+              </div>
+            )}
             {/* Secciones */}
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold">Secciones del salón</h2>
                 <p className="text-xs text-muted-foreground">{rawSecciones.length} secciones</p>
               </div>
-              <Button size="sm" variant="outline" onClick={openNewSeccion}><Plus className="w-4 h-4 mr-1" />Nueva sección</Button>
+              <Button size="sm" variant="outline" onClick={openNewSeccion} disabled={!tableEstablecimiento}><Plus className="w-4 h-4 mr-1" />Nueva sección</Button>
             </div>
             {rawSecciones.length === 0 && (
               <div className="rounded-lg border border-dashed p-6 text-center">
@@ -1811,11 +1933,44 @@ export default function AdminPage() {
       </Dialog>
 
       {/* Seccion */}
+      {/* Sucursal */}
+      <Dialog open={showSucursalDialog} onOpenChange={setShowSucursalDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{editingSucursal ? "Editar sucursal" : "Nueva sucursal"}</DialogTitle>
+            <DialogDescription>Un local del negocio (ej: Metroplaza, Paxcamán). Cada uno tiene sus mesas, inventario, caja y menú.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>Nombre *</Label>
+              <Input value={sucursalForm.nombre} onChange={e => setSucursalForm(p => ({ ...p, nombre: e.target.value }))} placeholder="Ej: Metroplaza" />
+            </div>
+            <div className="space-y-1">
+              <Label>Dirección</Label>
+              <Input value={sucursalForm.direccion} onChange={e => setSucursalForm(p => ({ ...p, direccion: e.target.value }))} placeholder="Opcional" />
+            </div>
+            <div className="space-y-1">
+              <Label>Teléfono</Label>
+              <Input value={sucursalForm.telefono} onChange={e => setSucursalForm(p => ({ ...p, telefono: e.target.value }))} placeholder="Opcional" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSucursalDialog(false)}>Cancelar</Button>
+            <Button onClick={saveSucursal}>Guardar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showSeccionDialog} onOpenChange={setShowSeccionDialog}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{editingSeccion ? `Editar sección` : "Nueva sección"}</DialogTitle>
-            <DialogDescription>Las secciones agrupan las mesas del salón (ej: Interior, Terraza, Bar).</DialogDescription>
+            <DialogDescription>
+              Las secciones agrupan las mesas del salón (ej: Interior, Terraza, Bar).
+              {!editingSeccion && tableEstablecimiento && (
+                <> Se creará en <span className="font-medium">{sucursalesAdmin.find(s => s.id === tableEstablecimiento)?.nombre}</span>.</>
+              )}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
