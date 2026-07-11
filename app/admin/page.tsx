@@ -1033,7 +1033,7 @@ export default function AdminPage() {
 
       <div className="max-w-[1400px] mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-10 mb-6">
+          <TabsList className="grid w-full grid-cols-11 mb-6">
             <TabsTrigger value="dashboard"><LayoutDashboard className="w-4 h-4 mr-1 hidden sm:inline" />Dashboard</TabsTrigger>
             <TabsTrigger value="sucursales"><Building2 className="w-4 h-4 mr-1 hidden sm:inline" />Sucursales</TabsTrigger>
             <TabsTrigger value="inventory"><Package className="w-4 h-4 mr-1 hidden sm:inline" />Inventario</TabsTrigger>
