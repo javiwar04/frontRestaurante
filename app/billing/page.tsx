@@ -146,7 +146,7 @@ export default function BillingPage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card sticky top-0 z-10">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="max-w-[1400px] mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => router.push("/")} title="Volver al panel">
               <ArrowLeft className="w-5 h-5" />
@@ -167,7 +167,7 @@ export default function BillingPage() {
         </div>
       </header>
 
-      <div className="container mx-auto px-4 py-6">
+      <div className="max-w-[1400px] mx-auto px-4 py-6">
         {/* Search */}
         <div className="relative mb-4 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />

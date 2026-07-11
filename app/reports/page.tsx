@@ -337,7 +337,7 @@ export default function ReportsPage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card sticky top-0 z-10">
-        <div className="container mx-auto px-4 py-3">
+        <div className="max-w-[1400px] mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Button variant="ghost" size="icon" onClick={() => router.push("/")} title="Volver al panel">
@@ -355,7 +355,7 @@ export default function ReportsPage() {
         </div>
       </header>
 
-      <div className="container mx-auto px-4 py-6">
+      <div className="max-w-[1400px] mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-6 mb-6">
             <TabsTrigger value="summary"><BarChart3 className="w-4 h-4 mr-1 hidden sm:inline" />Resumen</TabsTrigger>

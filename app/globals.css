@@ -3,75 +3,77 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Paleta "Tacos Michoacán": verde agave de marca + terracota de acento,
+   sobre fondo hueso cálido. Look cantina moderna. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  --background: #f7f4ee;          /* hueso cálido */
+  --foreground: #292421;          /* casi negro cálido */
+  --card: #ffffff;
+  --card-foreground: #292421;
+  --popover: #ffffff;
+  --popover-foreground: #292421;
+  --primary: #3b7a57;            /* verde agave */
+  --primary-foreground: #fafaf7;
+  --secondary: #ede7dc;          /* neutro cálido claro */
+  --secondary-foreground: #3b352f;
+  --muted: #ede7dc;
+  --muted-foreground: #6f655a;   /* gris cálido */
+  --accent: #f1e3d7;             /* tinte terracota suave (hovers) */
+  --accent-foreground: #a24e28;  /* terracota oscuro */
+  --destructive: #c0392b;        /* rojo alertas */
+  --destructive-foreground: #fafaf7;
+  --border: #e4dbce;
+  --input: #e4dbce;
+  --ring: #3b7a57;
+  --chart-1: #3b7a57;            /* agave */
+  --chart-2: #c96a3b;            /* terracota */
+  --chart-3: #d9a441;            /* dorado */
+  --chart-4: #6b8e4e;            /* oliva */
+  --chart-5: #8c5a3b;            /* barro */
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #f2ede4;
+  --sidebar-foreground: #292421;
+  --sidebar-primary: #3b7a57;
+  --sidebar-primary-foreground: #fafaf7;
+  --sidebar-accent: #f1e3d7;
+  --sidebar-accent-foreground: #a24e28;
+  --sidebar-border: #e4dbce;
+  --sidebar-ring: #3b7a57;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  --background: #1a1714;          /* marrón muy oscuro */
+  --foreground: #f2eee7;
+  --card: #221e1a;
+  --card-foreground: #f2eee7;
+  --popover: #221e1a;
+  --popover-foreground: #f2eee7;
+  --primary: #5fa97e;            /* agave más claro para oscuro */
+  --primary-foreground: #10140f;
+  --secondary: #302a24;
+  --secondary-foreground: #f2eee7;
+  --muted: #302a24;
+  --muted-foreground: #a89c8d;
+  --accent: #3a2e25;             /* acento cálido oscuro */
+  --accent-foreground: #e8a87c;  /* terracota claro */
+  --destructive: #e5654b;
+  --destructive-foreground: #10140f;
+  --border: #352e27;
+  --input: #352e27;
+  --ring: #5fa97e;
+  --chart-1: #5fa97e;
+  --chart-2: #e0885a;
+  --chart-3: #e2bd6a;
+  --chart-4: #8fae6f;
+  --chart-5: #b3805e;
+  --sidebar: #221e1a;
+  --sidebar-foreground: #f2eee7;
+  --sidebar-primary: #5fa97e;
+  --sidebar-primary-foreground: #10140f;
+  --sidebar-accent: #3a2e25;
+  --sidebar-accent-foreground: #e8a87c;
+  --sidebar-border: #352e27;
+  --sidebar-ring: #5fa97e;
 }
 
 @theme inline {
