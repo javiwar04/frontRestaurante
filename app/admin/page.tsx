@@ -1091,11 +1091,13 @@ export default function AdminPage() {
                             })}
                             {u.modules.length === 0 && <span className="text-xs text-muted-foreground italic">Sin módulos asignados</span>}
                           </div>
-                          <div className="flex items-center gap-1 mt-1.5 text-xs text-muted-foreground">
+                          <div className={`flex items-center gap-1 mt-1.5 text-xs ${u.establecimientoIds.length === 0 && u.role !== "admin" ? "text-amber-600" : "text-muted-foreground"}`}>
                             <Building2 className="w-3 h-3 shrink-0" />
-                            {u.establecimientoIds.length === 0
-                              ? <span>Todas las sucursales</span>
-                              : <span className="truncate">{u.establecimientoIds.map(id => sucursalesAdmin.find(s => s.id === id)?.nombre ?? "?").join(", ")}</span>}
+                            {u.role === "admin"
+                              ? <span>Todas las sucursales (admin)</span>
+                              : u.establecimientoIds.length === 0
+                                ? <span>⚠ Sin sucursal asignada — no podrá entrar al POS</span>
+                                : <span className="truncate">{u.establecimientoIds.map(id => sucursalesAdmin.find(s => s.id === id)?.nombre ?? "?").join(", ")}</span>}
                           </div>
                         </div>
                       </div>
