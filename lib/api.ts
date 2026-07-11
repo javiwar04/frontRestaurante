@@ -103,16 +103,27 @@ export async function apiFetch<T>(
   const token = module ? (getToken(module) || getAnyToken()) : null
   const establecimientoId = module ? getActiveEstablecimiento(module) : null
 
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    ...fetchOptions,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      // Sucursal activa: el backend filtra por ella cuando aplica
-      ...(establecimientoId ? { "X-Establecimiento": establecimientoId } : {}),
-      ...(fetchOptions.headers ?? {}),
-    },
-  })
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}${endpoint}`, {
+      ...fetchOptions,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        // Sucursal activa: el backend filtra por ella cuando aplica
+        ...(establecimientoId ? { "X-Establecimiento": establecimientoId } : {}),
+        ...(fetchOptions.headers ?? {}),
+      },
+    })
+  } catch {
+    // fetch solo rechaza por fallo de red (servidor caído, sin WiFi, DNS…),
+    // no por códigos HTTP. status 0 = "no hubo respuesta del servidor".
+    const err: ApiError = {
+      message: "Sin conexión con el servidor. Verifica tu red e intenta de nuevo.",
+      status: 0,
+    }
+    throw err
+  }
 
   if (res.status === 401 && endpoint !== "/auth/login") {
     handleUnauthorized(module)
