@@ -34,11 +34,12 @@ export function DashboardLive({ module = "admin" }: { module?: string }) {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
 
   const load = useCallback(async () => {
-    const { startMs, endMs, iso } = todayRange()
+    const { startMs, endMs } = todayRange()
     try {
       const [allPagos, plats] = await Promise.all([
         pagos.getAll(module).catch(() => [] as Pago[]),
-        reportes.platillos(iso, iso, module).catch(() => null),
+        // Sin fechas: el backend usa "hoy" en hora Guatemala (rango correcto)
+        reportes.platillos(undefined, undefined, module).catch(() => null),
       ])
       const hoy = allPagos.filter((p) => {
         const t = new Date(p.registradoEn).getTime()
