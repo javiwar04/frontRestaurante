@@ -80,6 +80,7 @@ interface AppUser {
   pin: string
   role: string
   modules: AppModule[]
+  establecimientoIds: string[]   // sucursales donde puede operar (vacío = todas)
   active: boolean
   notes: string
 }
@@ -178,10 +179,10 @@ interface SaleTicket {
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
 const seedUsers: AppUser[] = [
-  { id: "u1", name: "Administrador", username: "admin", pin: "0000", role: "Administrador", modules: ["pos", "kitchen", "inventory", "reports", "billing", "admin"], active: true, notes: "" },
-  { id: "u2", name: "Cajero 1", username: "cajero1", pin: "1234", role: "Cajero", modules: ["pos", "billing"], active: true, notes: "" },
-  { id: "u3", name: "Mesero Juan", username: "juan", pin: "4321", role: "Mesero", modules: ["pos"], active: true, notes: "" },
-  { id: "u4", name: "Cocinero Pedro", username: "pedro", pin: "5678", role: "Cocina", modules: ["kitchen"], active: true, notes: "" },
+  { id: "u1", name: "Administrador", username: "admin", pin: "0000", role: "Administrador", modules: ["pos", "kitchen", "inventory", "reports", "billing", "admin"], establecimientoIds: [], active: true, notes: "" },
+  { id: "u2", name: "Cajero 1", username: "cajero1", pin: "1234", role: "Cajero", modules: ["pos", "billing"], establecimientoIds: [], active: true, notes: "" },
+  { id: "u3", name: "Mesero Juan", username: "juan", pin: "4321", role: "Mesero", modules: ["pos"], establecimientoIds: [], active: true, notes: "" },
+  { id: "u4", name: "Cocinero Pedro", username: "pedro", pin: "5678", role: "Cocina", modules: ["kitchen"], establecimientoIds: [], active: true, notes: "" },
 ]
 
 const seedTables: TableDef[] = [
@@ -306,7 +307,7 @@ const VALID_ROLES: { value: Usuario["rol"]; label: string }[] = [
 const TABLE_SECTIONS = ["Interior", "Terraza", "Barra", "Privado", "Jardín", "Lounge"]
 
 // ─── Blank helpers ─────────────────────────────────────────────────────────────
-const blankUser = (): Omit<AppUser, "id"> => ({ name: "", username: "", pin: "", role: "", modules: [], active: true, notes: "" })
+const blankUser = (): Omit<AppUser, "id"> => ({ name: "", username: "", pin: "", role: "", modules: [], establecimientoIds: [], active: true, notes: "" })
 const blankTable = (): Omit<TableDef, "id"> => ({ number: 0, capacity: 2, section: "", seccionId: "", active: true, notes: "" })
 const blankMenuItem = (): Omit<MenuItem, "id"> => ({ categoryId: "", name: "", price: 0, description: "", available: true, establecimientoIds: [], modificadores: [] })
 const blankCategory = (): Omit<MenuCategory, "id"> => ({ name: "", order: 99, active: true })
@@ -326,7 +327,7 @@ export default function AdminPage() {
     if (!user) return
 
     usuarios.getAll().then(list =>
-      setAppUsers(list.map(u => ({ id: u.id, name: u.nombre, username: u.username, pin: "", role: u.rol, modules: u.modules as AppModule[], active: u.activo, notes: "" })))
+      setAppUsers(list.map(u => ({ id: u.id, name: u.nombre, username: u.username, pin: "", role: u.rol, modules: u.modules as AppModule[], establecimientoIds: u.establecimientoIds ?? [], active: u.activo, notes: "" })))
     ).catch(() => {})
 
     categoriasMenu.getAll("admin").then(list =>
@@ -457,7 +458,7 @@ export default function AdminPage() {
   const openNewUser = () => { setEditingUser(null); setUserForm(blankUser()); setShowPin(false); setShowUserDialog(true) }
   const openEditUser = (u: AppUser) => {
     setEditingUser(u)
-    setUserForm({ name: u.name, username: u.username, pin: u.pin, role: u.role, modules: [...u.modules], active: u.active, notes: u.notes })
+    setUserForm({ name: u.name, username: u.username, pin: u.pin, role: u.role, modules: [...u.modules], establecimientoIds: [...(u.establecimientoIds ?? [])], active: u.active, notes: u.notes })
     setShowPin(false); setShowUserDialog(true)
   }
   const toggleUserModule = (mod: AppModule) => {
@@ -466,13 +467,21 @@ export default function AdminPage() {
       modules: p.modules.includes(mod) ? p.modules.filter(m => m !== mod) : [...p.modules, mod],
     }))
   }
+  const toggleUserSucursal = (id: string) => {
+    setUserForm(p => ({
+      ...p,
+      establecimientoIds: p.establecimientoIds.includes(id)
+        ? p.establecimientoIds.filter(x => x !== id)
+        : [...p.establecimientoIds, id],
+    }))
+  }
   const saveUser = () => {
     if (!userForm.name.trim()) { toast({ title: "El nombre es requerido" }); return }
     if (!userForm.username.trim()) { toast({ title: "El usuario es requerido" }); return }
     if (!userForm.role) { toast({ title: "Selecciona un rol" }); return }
     if (!editingUser && userForm.pin.length < 4) { toast({ title: "El PIN debe tener al menos 4 dígitos" }); return }
     if (editingUser) {
-      const payload: { nombre: string; username: string; rol: Usuario["rol"]; modules: string[]; activo: boolean; pin?: string } = { nombre: userForm.name, username: userForm.username, rol: userForm.role as Usuario["rol"], modules: userForm.modules, activo: userForm.active }
+      const payload: { nombre: string; username: string; rol: Usuario["rol"]; modules: string[]; establecimientoIds: string[]; activo: boolean; pin?: string } = { nombre: userForm.name, username: userForm.username, rol: userForm.role as Usuario["rol"], modules: userForm.modules, establecimientoIds: userForm.establecimientoIds, activo: userForm.active }
       if (userForm.pin.length >= 4) payload.pin = userForm.pin
       usuarios.update(editingUser.id, payload).then(u => {
         setAppUsers(prev => prev.map(x => x.id === editingUser.id ? { ...x, ...userForm, id: u.id } : x))
@@ -482,7 +491,7 @@ export default function AdminPage() {
     } else {
       const duplicate = appUsers.find(u => u.username === userForm.username)
       if (duplicate) { toast({ title: "El nombre de usuario ya existe" }); return }
-      usuarios.create({ nombre: userForm.name, username: userForm.username, pin: userForm.pin, rol: userForm.role as Usuario["rol"], modules: userForm.modules }).then(u => {
+      usuarios.create({ nombre: userForm.name, username: userForm.username, pin: userForm.pin, rol: userForm.role as Usuario["rol"], modules: userForm.modules, establecimientoIds: userForm.establecimientoIds }).then(u => {
         setAppUsers(prev => [...prev, { id: u.id, ...userForm }])
         toast({ title: "Usuario creado" })
         setShowUserDialog(false)
@@ -1081,6 +1090,12 @@ export default function AdminPage() {
                               return <Badge key={mod} variant="secondary" className="text-xs">{label}</Badge>
                             })}
                             {u.modules.length === 0 && <span className="text-xs text-muted-foreground italic">Sin módulos asignados</span>}
+                          </div>
+                          <div className="flex items-center gap-1 mt-1.5 text-xs text-muted-foreground">
+                            <Building2 className="w-3 h-3 shrink-0" />
+                            {u.establecimientoIds.length === 0
+                              ? <span>Todas las sucursales</span>
+                              : <span className="truncate">{u.establecimientoIds.map(id => sucursalesAdmin.find(s => s.id === id)?.nombre ?? "?").join(", ")}</span>}
                           </div>
                         </div>
                       </div>
@@ -1915,6 +1930,29 @@ export default function AdminPage() {
                   </label>
                 ))}
               </div>
+            </div>
+            <div className="space-y-1">
+              <Label>Sucursales donde puede operar</Label>
+              {sucursalesAdmin.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Aún no hay sucursales. Créalas en la pestaña Sucursales.</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2 rounded-lg border border-border p-3">
+                    {sucursalesAdmin.map(s => (
+                      <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                        <Checkbox
+                          checked={userForm.establecimientoIds.includes(s.id)}
+                          onCheckedChange={() => toggleUserSucursal(s.id)}
+                        />
+                        {s.nombre}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    En el POS solo verá las sucursales marcadas. Un administrador entra a todas sin importar esto.
+                  </p>
+                </>
+              )}
             </div>
             <div className="space-y-1">
               <Label>Notas</Label>

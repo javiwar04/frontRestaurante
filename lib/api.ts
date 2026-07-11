@@ -671,6 +671,7 @@ export interface Usuario {
   rol: "admin" | "cajero" | "mesero" | "cocina"
   activo: boolean
   modules: string[]
+  establecimientoIds: string[]   // sucursales donde puede operar (vacío = todas)
   creadoEn: string
 }
 
@@ -680,6 +681,7 @@ export interface CreateUsuarioRequest {
   pin: string
   rol: Usuario["rol"]
   modules: string[]
+  establecimientoIds: string[]
 }
 
 export const usuarios = {
