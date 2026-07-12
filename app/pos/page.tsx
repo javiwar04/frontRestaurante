@@ -2506,7 +2506,7 @@ export default function POSPage() {
           {conteoItems.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">No hay insumos para contar en esta sucursal.</p>
           ) : (
-            <ScrollArea className="flex-1 min-h-0 px-5">
+            <div className="flex-1 min-h-0 overflow-y-auto px-5">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-background">
                   <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -2545,7 +2545,7 @@ export default function POSPage() {
                   })}
                 </tbody>
               </table>
-            </ScrollArea>
+            </div>
           )}
           <div className="flex justify-end gap-2 border-t bg-background p-4 shrink-0">
             <Button variant="outline" onClick={() => { setShowInventoryCount(false); setShowCashClose(true) }} disabled={conteoSaving}>Atrás</Button>
