@@ -268,6 +268,34 @@ export default function POSPage() {
       catch { /* si falla, caemos al caché local abajo */ }
       if (cancelled) return
 
+      // Items de cada orden del turno. El backend NO manda items en los pagos,
+      // así que al hidratar (p.ej. tras refrescar) los pagos quedaban sin items
+      // y las pestañas Productos/Categorías del reporte salían incompletas.
+      const itemsByOrden = new Map<string, OrderItem[]>()
+      try {
+        const ordsTurno = await ordenes.getByTurno(t!.id, "pos")
+        ordsTurno.forEach((o) => {
+          itemsByOrden.set(o.id, o.items.map((i) => ({
+            id: i.platilloId,
+            backendItemId: Number(i.id),
+            name: i.platilloNombre || i.nombre || i.platilloId,
+            price: i.precioUnitario,
+            quantity: i.cantidad,
+            category: "",
+            modifiers: (i.modificadores || []).map((m) => ({
+              group: m.grupoNombre || "Extra",
+              option: m.opcionNombre || "Opción",
+              priceDelta: Number(m.precioDelta || 0),
+              ...(m.opcionId ? { opcionId: m.opcionId } : {}),
+            })),
+            notes: i.notas ?? undefined,
+            sent: true,
+            status: "en_cocina" as const,
+          })))
+        })
+      } catch { /* si falla, los pagos quedan sin items (como antes) */ }
+      if (cancelled) return
+
       if (backendPagos.length > 0) {
         // Indexar caché local por id de pago del backend para recuperar detalle
         const localByBackendId = new Map<string, Payment>()
@@ -292,7 +320,7 @@ export default function POSPage() {
               userId: bp.meseroId ?? local?.userId ?? "",
               userName: bp.meseroNombre ?? local?.userName ?? "",
               invoiced: bp.facturado,
-              items: local?.items ?? [],
+              items: (local?.items && local.items.length > 0) ? local.items : (itemsByOrden.get(bp.ordenId) ?? []),
               waiterId: local?.waiterId,
               waiterName: local?.waiterName ?? bp.meseroNombre ?? undefined,
               discountAmount: local?.discountAmount ?? 0,
@@ -2948,7 +2976,7 @@ export default function POSPage() {
                     <div key={p.id} className="flex items-center justify-between border-b py-2">
                       <div>
                         <div className="text-sm font-medium">Mesa {p.tableNumber} · {p.orderId}</div>
-                        <div className="text-xs text-muted-foreground">{p.timestamp.toLocaleString()}{p.waiterName ? ` · ${p.waiterName}` : ""}</div>
+                        <div className="text-xs text-muted-foreground">{p.timestamp.toLocaleString("es-GT", { timeZone: "America/Guatemala", dateStyle: "short", timeStyle: "short" })}{p.waiterName ? ` · ${p.waiterName}` : ""}</div>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-primary">Q{p.amount.toFixed(2)}</span>
