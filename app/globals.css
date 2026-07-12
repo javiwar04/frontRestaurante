@@ -125,6 +125,17 @@
   }
 }
 
+/* Inputs numéricos sin las flechitas (spinner) — se ven más limpios */
+.no-spin::-webkit-outer-spin-button,
+.no-spin::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-spin {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* Print styles for 80mm thermal ticket */
 @media print {
   @page {

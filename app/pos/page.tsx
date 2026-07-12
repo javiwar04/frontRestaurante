@@ -2496,8 +2496,8 @@ export default function POSPage() {
 
       {/* Conteo de inventario (obligatorio antes de cerrar el turno) */}
       <Dialog open={showInventoryCount} onOpenChange={(o) => { if (!conteoSaving) setShowInventoryCount(o) }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+          <DialogHeader className="p-5 pb-3 space-y-1">
             <DialogTitle>Conteo de inventario</DialogTitle>
             <DialogDescription>
               Cuenta el producto físico para cerrar el turno. Encontré + Ingreso − Quedó = consumido; la merma se compara con lo vendido.
@@ -2506,33 +2506,38 @@ export default function POSPage() {
           {conteoItems.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">No hay insumos para contar en esta sucursal.</p>
           ) : (
-            <ScrollArea className="flex-1 min-h-0 -mx-2 px-2">
+            <ScrollArea className="flex-1 min-h-0 px-5">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-background">
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="py-2">Insumo</th>
-                    <th className="w-20 text-center">Encontré</th>
-                    <th className="w-20 text-center">Ingreso</th>
+                <thead className="sticky top-0 z-10 bg-background">
+                  <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <th className="py-2 pl-3">Insumo</th>
+                    <th className="w-24 text-center">Encontré</th>
+                    <th className="w-24 text-center">Ingreso</th>
                     <th className="w-16 text-center">Vendido</th>
-                    <th className="w-20 text-center">Quedó</th>
-                    <th className="w-24 text-right">Merma</th>
+                    <th className="w-24 text-center">Quedó</th>
+                    <th className="w-24 text-right pr-3">Merma</th>
                   </tr>
                 </thead>
                 <tbody>
                   {conteoItems.map((r) => {
                     const consumido = (Number(r.encontreStr) || 0) + (Number(r.ingresoStr) || 0) - (Number(r.quedoStr) || 0)
                     const merma = consumido - r.vendidoTeorico
+                    const hayMerma = Math.abs(merma) > 0.001
+                    const inputCls = "no-spin h-9 text-center px-1"
                     return (
-                      <tr key={r.insumoId} className="border-b border-border/50">
-                        <td className="py-1.5">{r.nombre} <span className="text-xs text-muted-foreground">({r.unidad})</span></td>
-                        <td><Input type="number" step="0.01" className="h-8 text-center" value={r.encontreStr}
+                      <tr key={r.insumoId} className="odd:bg-muted/40 rounded-lg">
+                        <td className="py-1.5 pl-3 rounded-l-lg">
+                          <span className="font-medium">{r.nombre}</span>{" "}
+                          <span className="text-xs text-muted-foreground">({r.unidad})</span>
+                        </td>
+                        <td className="px-1"><Input type="number" step="0.01" inputMode="decimal" className={inputCls} value={r.encontreStr}
                           onChange={(e) => setConteoField(r.insumoId, "encontreStr", e.target.value)} /></td>
-                        <td><Input type="number" step="0.01" className="h-8 text-center" value={r.ingresoStr}
+                        <td className="px-1"><Input type="number" step="0.01" inputMode="decimal" className={inputCls} value={r.ingresoStr}
                           onChange={(e) => setConteoField(r.insumoId, "ingresoStr", e.target.value)} /></td>
-                        <td className="text-center text-muted-foreground" title="Vendido en el turno (según recetas)">{r.vendidoTeorico}</td>
-                        <td><Input type="number" step="0.01" className="h-8 text-center" value={r.quedoStr}
+                        <td className="text-center text-muted-foreground tabular-nums" title="Vendido en el turno (según recetas)">{r.vendidoTeorico}</td>
+                        <td className="px-1"><Input type="number" step="0.01" inputMode="decimal" className={inputCls} value={r.quedoStr}
                           onChange={(e) => setConteoField(r.insumoId, "quedoStr", e.target.value)} /></td>
-                        <td className={`text-right font-medium ${Math.abs(merma) > 0.001 ? "text-destructive" : "text-green-600"}`}>
+                        <td className={`text-right pr-3 rounded-r-lg font-semibold tabular-nums ${hayMerma ? "text-destructive" : "text-green-600"}`}>
                           {merma.toFixed(2)}
                         </td>
                       </tr>
@@ -2542,12 +2547,12 @@ export default function POSPage() {
               </table>
             </ScrollArea>
           )}
-          <DialogFooter className="border-t pt-3">
+          <div className="flex justify-end gap-2 border-t bg-background p-4 shrink-0">
             <Button variant="outline" onClick={() => { setShowInventoryCount(false); setShowCashClose(true) }} disabled={conteoSaving}>Atrás</Button>
             <Button onClick={confirmInventoryCount} disabled={conteoSaving}>
               {conteoSaving ? "Guardando…" : "Confirmar y cerrar turno"}
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
