@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation"
 import {
   getSession, clearSession, type AuthUser,
   reportes, establecimientos as establecimientosApi,
-  type ReporteVentas, type ReportePlatillos, type ReporteMeseros, type Establecimiento,
+  pagos as pagosApi, ordenes as ordenesApi, config as configApi,
+  type ReporteVentas, type ReportePlatillos, type ReporteMeseros, type Establecimiento, type Pago,
 } from "@/lib/api"
+import { ReprintReceiptView, type ReprintData } from "./reprint-receipt"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -34,6 +36,7 @@ import {
   CalendarDays,
   CircleDollarSign,
   Star,
+  Printer,
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
@@ -206,6 +209,34 @@ export default function ReportsPage() {
     establecimientosApi.getAll("reports").then(setSucursales).catch(() => {})
   }, [user])
 
+  // ── Reimpresión de cuentas (pagos del backend, persistentes) ────────────────
+  const [reprintPagos, setReprintPagos] = useState<Pago[]>([])
+  const [reprintNegocio, setReprintNegocio] = useState<ReprintData["negocio"]>({})
+  const [reprintData, setReprintData] = useState<ReprintData | null>(null)
+  const [reprintingId, setReprintingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+    pagosApi.getAll("reports").then(setReprintPagos).catch(() => {})
+    configApi.getNegocio("reports")
+      .then((c) => setReprintNegocio({ nombre: c.nombre, direccion: c.direccion, telefono: c.telefono }))
+      .catch(() => {})
+  }, [user, filtroSucursal])
+
+  const reimprimirPago = async (pago: Pago) => {
+    setReprintingId(pago.id)
+    try {
+      const orden = await ordenesApi.getOne(pago.ordenId, "reports")
+      setReprintData({ orden, pago, negocio: reprintNegocio })
+      // Dar un tick para que el recibo se renderice antes de mandar a imprimir
+      setTimeout(() => window.print(), 120)
+    } catch (e) {
+      toast({ title: "No se pudo reimprimir", description: String((e as { message?: string })?.message ?? e), variant: "destructive" })
+    } finally {
+      setReprintingId(null)
+    }
+  }
+
   const logout = () => {
     clearSession("reports")
     router.push("/reports/login")
@@ -363,6 +394,7 @@ export default function ReportsPage() {
             <TabsTrigger value="products"><UtensilsCrossed className="w-4 h-4 mr-1 hidden sm:inline" />Platillos</TabsTrigger>
             <TabsTrigger value="users"><Users className="w-4 h-4 mr-1 hidden sm:inline" />Meseros</TabsTrigger>
             <TabsTrigger value="history"><Receipt className="w-4 h-4 mr-1 hidden sm:inline" />Historial</TabsTrigger>
+            <TabsTrigger value="reprint"><Printer className="w-4 h-4 mr-1 hidden sm:inline" />Reimprimir</TabsTrigger>
             <TabsTrigger value="cut"><ShieldCheck className="w-4 h-4 mr-1 hidden sm:inline" />Corte</TabsTrigger>
           </TabsList>
 
@@ -722,6 +754,45 @@ export default function ReportsPage() {
             }
           </TabsContent>
 
+          {/* ══ REIMPRIMIR CUENTAS ══ */}
+          <TabsContent value="reprint" className="space-y-4">
+            <div>
+              <h2 className="text-base font-semibold">Reimprimir cuentas</h2>
+              <p className="text-xs text-muted-foreground">Cuentas cobradas recientes del turno. Reimprime el recibo de cualquiera.</p>
+            </div>
+            {reprintPagos.length === 0 ? (
+              <div className="py-16 text-center">
+                <Printer className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
+                <p className="text-sm text-muted-foreground">No hay cuentas cobradas para reimprimir</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {reprintPagos.map((p) => {
+                  const metodos = Array.from(new Set(p.tenders.map((t) =>
+                    t.metodo === "cash" ? "Efectivo" : t.metodo === "card" ? "Tarjeta" : "Depósito"))).join(" + ")
+                  const hora = new Date(p.registradoEn).toLocaleString("es-GT", {
+                    timeZone: "America/Guatemala", dateStyle: "short", timeStyle: "short",
+                  })
+                  return (
+                    <Card key={p.id} className="border-border">
+                      <CardContent className="p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate">Q{p.montoTotal.toFixed(2)} · {metodos || "—"}</div>
+                          <div className="text-xs text-muted-foreground truncate">{hora}{p.meseroNombre ? ` · ${p.meseroNombre}` : ""}</div>
+                        </div>
+                        <Button size="sm" variant="outline" className="h-8 gap-1 shrink-0"
+                          disabled={reprintingId === p.id} onClick={() => reimprimirPago(p)}>
+                          <Printer className="w-3.5 h-3.5" />
+                          {reprintingId === p.id ? "…" : "Reimprimir"}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+            )}
+          </TabsContent>
+
           {/* ══ CORTE DE CAJA ══ */}
           <TabsContent value="cut" className="space-y-5 max-w-lg">
             <div>
@@ -814,6 +885,9 @@ export default function ReportsPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Recibo oculto para reimpresión (solo visible al imprimir) */}
+      <ReprintReceiptView data={reprintData} />
     </div>
   )
 }
