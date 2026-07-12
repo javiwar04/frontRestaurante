@@ -4,6 +4,11 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
+  // ESLint no está configurado en este proyecto (plantilla v0); que su ausencia
+  // no frene el build. El chequeo real de calidad es TypeScript (arriba).
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   images: {
     unoptimized: true,
   },
