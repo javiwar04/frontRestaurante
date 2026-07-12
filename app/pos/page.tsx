@@ -64,7 +64,9 @@ export default function POSPage() {
 
   // ─── Mode / Navigation ─────────────────────────────────────────────────────
   // cash-open → tables → order
-  const [mode, setMode] = useState<"cash-open" | "tables" | "order">("cash-open")
+  // "loading" mientras se hidrata el turno: evita el parpadeo de "Abrir Caja"
+  // antes de saber si la caja ya estaba abierta.
+  const [mode, setMode] = useState<"loading" | "cash-open" | "tables" | "order">("loading")
 
   // ─── Cash / Turno ──────────────────────────────────────────────────────────
   const [cashOpen, setCashOpen] = useState(false)
@@ -1560,7 +1562,7 @@ export default function POSPage() {
   // RENDER — Early returns
   // ═══════════════════════════════════════════════════════════════════════════
 
-  if (!sessionReady) {
+  if (!sessionReady || mode === "loading") {
     return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-muted-foreground">Cargando...</p></div>
   }
 

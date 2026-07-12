@@ -332,6 +332,16 @@ export default function KitchenPage() {
     )
   }
 
+  // Mientras aún no se sabe la sucursal (verificando caché/backend), mostrar
+  // "cargando" en vez del monitor — así no parpadea el monitor antes del selector.
+  if (!sessionReady) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Cargando…</p>
+      </div>
+    )
+  }
+
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background">
