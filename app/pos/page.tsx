@@ -689,8 +689,12 @@ export default function POSPage() {
 
   // Categoría de un item vendido: el item guarda platilloId en `id`; se cruza
   // con el menú para el desglose (los items hidratados no traen categoría).
+  // Se intenta por id (platilloId) y, como respaldo, por nombre.
   const categoriaDeItem = (item: OrderItem): string =>
-    menuItems.find((m) => m.id === item.id)?.category || item.category || "Sin categoría"
+    menuItems.find((m) => m.id === item.id)?.category
+    || menuItems.find((m) => m.name === item.name)?.category
+    || item.category
+    || "Sin categoría"
 
   // Fija la propina y, si solo hay un método de pago, ajusta su monto al nuevo total
   const applyTip = (newTip: number) => {
