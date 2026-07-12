@@ -685,6 +685,11 @@ export default function POSPage() {
   // Total a cobrar = consumo + propina
   const calculateTotal = () => calculateBaseTotal() + tipAmount
 
+  // Categoría de un item vendido: el item guarda platilloId en `id`; se cruza
+  // con el menú para el desglose (los items hidratados no traen categoría).
+  const categoriaDeItem = (item: OrderItem): string =>
+    menuItems.find((m) => m.id === item.id)?.category || item.category || "Sin categoría"
+
   // Fija la propina y, si solo hay un método de pago, ajusta su monto al nuevo total
   const applyTip = (newTip: number) => {
     const tip = Math.max(0, Number(newTip.toFixed(2)))
@@ -2751,7 +2756,7 @@ export default function POSPage() {
                 <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => {
                   const catMap: Record<string, { qty: number; total: number }> = {}
                   payments.forEach((p) => p.items.forEach((i) => {
-                    const cat = i.category || "Sin categoría"
+                    const cat = categoriaDeItem(i)
                     if (!catMap[cat]) catMap[cat] = { qty: 0, total: 0 }
                     catMap[cat].qty += i.quantity; catMap[cat].total += i.price * i.quantity
                   }))
@@ -2767,7 +2772,7 @@ export default function POSPage() {
                 {(() => {
                   const catMap: Record<string, { qty: number; total: number }> = {}
                   payments.forEach((p) => p.items.forEach((i) => {
-                    const cat = i.category || "Sin categoría"
+                    const cat = categoriaDeItem(i)
                     if (!catMap[cat]) catMap[cat] = { qty: 0, total: 0 }
                     catMap[cat].qty += i.quantity
                     catMap[cat].total += i.price * i.quantity
