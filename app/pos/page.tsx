@@ -908,19 +908,48 @@ export default function POSPage() {
   // Imprime el resumen del cierre (usa el sistema de impresión de reportes)
   const printCloseSummary = () => {
     const s = currentShift
+    const totalDisc = payments.reduce((sum, p) => sum + (p.discountAmount || 0), 0)
+    const totalTip = payments.reduce((sum, p) => sum + (p.tipAmount || 0), 0)
+    const avg = s.totalOrders > 0 ? s.totalSales / s.totalOrders : 0
+    const diff = physicalCount - currentCash
+    const fmtHora = (d?: Date) => d ? d.toLocaleString("es-GT", { timeZone: "America/Guatemala", dateStyle: "short", timeStyle: "short" }) : "-"
+    // Ventas por hora
+    const hourMap: Record<number, { count: number; total: number }> = {}
+    payments.forEach((p) => { const h = p.timestamp.getHours(); if (!hourMap[h]) hourMap[h] = { count: 0, total: 0 }; hourMap[h].count++; hourMap[h].total += p.amount })
     const lines: string[] = [
+      `Cajero | ${s.userName}`,
+      `Apertura | ${fmtHora(s.startTime)}`,
+      `Cierre | ${fmtHora(new Date())}`,
+      "---", "## Ventas",
       `Total vendido | Q${s.totalSales.toFixed(2)}`,
       `Ordenes | ${s.totalOrders}`,
-      "---",
+      `Ticket promedio | Q${avg.toFixed(2)}`,
+      `Descuentos | Q${totalDisc.toFixed(2)}`,
+      ...(totalTip > 0 ? [`Propinas | Q${totalTip.toFixed(2)}`] : []),
+      "---", "## Metodos de pago",
       `Efectivo | Q${s.paymentMethods.cash.toFixed(2)}`,
       `Tarjeta | Q${s.paymentMethods.card.toFixed(2)}`,
       `Transferencia | Q${s.paymentMethods.transfer.toFixed(2)}`,
-      "---",
+      "---", "## Arqueo de caja",
+      `Efectivo inicial | Q${(currentCash - s.paymentMethods.cash).toFixed(2)}`,
       `Efectivo esperado | Q${currentCash.toFixed(2)}`,
+      `Efectivo contado | Q${physicalCount.toFixed(2)}`,
+      `Diferencia | Q${diff.toFixed(2)}`,
+      "---", "## Ventas por hora",
+      ...Object.keys(hourMap).map(Number).sort((a, b) => a - b)
+        .map((h) => `${String(h).padStart(2, "0")}:00 (${hourMap[h].count}) | Q${hourMap[h].total.toFixed(2)}`),
       "---", "## Productos vendidos",
       ...closeProducts.map(([n, c]) => `${n} | ${c}`),
     ]
     triggerPrintReport("CORTE DE TURNO", lines)
+  }
+
+  // Cierre del turno: imprime el reporte completo y luego cierra. El print se
+  // dispara mientras el POS sigue en modo "tables" (donde vive la vista de
+  // impresión); por eso el cierre se aplaza un momento tras mandar a imprimir.
+  const closeShiftWithReport = () => {
+    printCloseSummary()
+    setTimeout(() => closeCash(), 900)
   }
 
   // Paso 1 del cierre: cargar la hoja de conteo de inventario (obligatoria)
@@ -2487,74 +2516,13 @@ export default function POSPage() {
             <Button variant="outline" className="bg-transparent" onClick={printCloseSummary}>
               <Printer className="w-4 h-4 mr-1" />Imprimir
             </Button>
-            <Button onClick={startInventoryCount} disabled={conteoLoading}>
-              {conteoLoading ? "Cargando…" : "Continuar al conteo"}
+            <Button onClick={closeShiftWithReport}>
+              <Printer className="w-4 h-4 mr-1" />Cerrar turno e imprimir
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Conteo de inventario (obligatorio antes de cerrar el turno) */}
-      <Dialog open={showInventoryCount} onOpenChange={(o) => { if (!conteoSaving) setShowInventoryCount(o) }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
-          <DialogHeader className="p-5 pb-3 space-y-1">
-            <DialogTitle>Conteo de inventario</DialogTitle>
-            <DialogDescription>
-              Cuenta el producto físico para cerrar el turno. Encontré + Ingreso − Quedó = consumido; la merma se compara con lo vendido.
-            </DialogDescription>
-          </DialogHeader>
-          {conteoItems.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No hay insumos para contar en esta sucursal.</p>
-          ) : (
-            <div className="flex-1 min-h-0 overflow-y-auto px-5">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 bg-background">
-                  <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    <th className="py-2 pl-3">Insumo</th>
-                    <th className="w-24 text-center">Encontré</th>
-                    <th className="w-24 text-center">Ingreso</th>
-                    <th className="w-16 text-center">Vendido</th>
-                    <th className="w-24 text-center">Quedó</th>
-                    <th className="w-24 text-right pr-3">Merma</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {conteoItems.map((r) => {
-                    const consumido = (Number(r.encontreStr) || 0) + (Number(r.ingresoStr) || 0) - (Number(r.quedoStr) || 0)
-                    const merma = consumido - r.vendidoTeorico
-                    const hayMerma = Math.abs(merma) > 0.001
-                    const inputCls = "no-spin h-9 text-center px-1"
-                    return (
-                      <tr key={r.insumoId} className="odd:bg-muted/40 rounded-lg">
-                        <td className="py-1.5 pl-3 rounded-l-lg">
-                          <span className="font-medium">{r.nombre}</span>{" "}
-                          <span className="text-xs text-muted-foreground">({r.unidad})</span>
-                        </td>
-                        <td className="px-1"><Input type="number" step="0.01" inputMode="decimal" className={inputCls} value={r.encontreStr}
-                          onChange={(e) => setConteoField(r.insumoId, "encontreStr", e.target.value)} /></td>
-                        <td className="px-1"><Input type="number" step="0.01" inputMode="decimal" className={inputCls} value={r.ingresoStr}
-                          onChange={(e) => setConteoField(r.insumoId, "ingresoStr", e.target.value)} /></td>
-                        <td className="text-center text-muted-foreground tabular-nums" title="Vendido en el turno (según recetas)">{r.vendidoTeorico}</td>
-                        <td className="px-1"><Input type="number" step="0.01" inputMode="decimal" className={inputCls} value={r.quedoStr}
-                          onChange={(e) => setConteoField(r.insumoId, "quedoStr", e.target.value)} /></td>
-                        <td className={`text-right pr-3 rounded-r-lg font-semibold tabular-nums ${hayMerma ? "text-destructive" : "text-green-600"}`}>
-                          {merma.toFixed(2)}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <div className="flex justify-end gap-2 border-t bg-background p-4 shrink-0">
-            <Button variant="outline" onClick={() => { setShowInventoryCount(false); setShowCashClose(true) }} disabled={conteoSaving}>Atrás</Button>
-            <Button onClick={confirmInventoryCount} disabled={conteoSaving}>
-              {conteoSaving ? "Guardando…" : "Confirmar y cerrar turno"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Cash Move */}
       <Dialog open={showCashMove} onOpenChange={setShowCashMove}>
