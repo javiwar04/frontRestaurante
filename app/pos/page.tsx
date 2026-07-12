@@ -1392,7 +1392,7 @@ export default function POSPage() {
     // Facturación cerrada (futura FEL): imprimir recibo y volver a mesas.
     // Cuando se reactive, se ofrece la factura como antes.
     if (!FACTURACION_HABILITADA) {
-      printAndGoToTables()
+      printAndGoToTables(payment)
       return
     }
 
@@ -1431,24 +1431,27 @@ export default function POSPage() {
       subtotal, tax, total, timestamp: new Date(),
       customerName: invoiceCustomerName || undefined, customerRFC: invoiceCustomerRFC || undefined,
     }
+    const paidP = currentPayment
     setInvoices((prev) => [...prev, invoice])
     setPayments((prev) => prev.map((p) => p.id === currentPayment.id ? { ...p, invoiced: true } : p))
     setShowInvoiceDialog(false)
     setCurrentPayment(null)
     logAudit("invoice", `${invoice.id} · Mesa ${invoice.tableNumber}`)
     toast({ title: "Factura generada", description: folio ? `Folio ${folio}` : invoice.id })
-    printAndGoToTables()
+    printAndGoToTables(paidP ?? undefined)
   }
 
   const handleSkipInvoice = () => {
+    const p = currentPayment
     setShowInvoiceDialog(false)
     setCurrentPayment(null)
-    printAndGoToTables()
+    printAndGoToTables(p ?? undefined)
   }
 
-  const printAndGoToTables = () => {
-    // Set print data and trigger print
-    const lastPayment = payments[payments.length - 1]
+  const printAndGoToTables = (paymentToPrint?: Payment) => {
+    // Usar el pago recién creado si se pasa (evita leer estado viejo por el
+    // setState asíncrono, que hacía imprimir el pago anterior con items vacíos).
+    const lastPayment = paymentToPrint ?? payments[payments.length - 1]
     if (lastPayment) {
       triggerPrintTicket({
         kind: "payment", ticketId: lastPayment.orderId, timestamp: lastPayment.timestamp,
@@ -2464,7 +2467,7 @@ export default function POSPage() {
           {conteoItems.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">No hay insumos para contar en esta sucursal.</p>
           ) : (
-            <ScrollArea className="flex-1 -mx-2 px-2">
+            <ScrollArea className="flex-1 min-h-0 -mx-2 px-2">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-background">
                   <tr className="border-b text-left text-xs text-muted-foreground">

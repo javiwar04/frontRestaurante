@@ -4,6 +4,16 @@
  */
 import { getModifiersPrice, type NegocioInfo, type PrintReportData, type PrintTicketData } from "./types"
 
+// Hora local de Guatemala (UTC-6) sin depender de la zona del dispositivo,
+// que en algunos equipos/servidores está en UTC y mostraba +6h de más.
+function fmtFechaGt(d: Date): string {
+  return d.toLocaleString("es-GT", {
+    timeZone: "America/Guatemala",
+    dateStyle: "short",
+    timeStyle: "medium",
+  })
+}
+
 function TicketHeader({ negocio }: { negocio: NegocioInfo }) {
   return (
     <div className="text-center">
@@ -34,7 +44,7 @@ export function PrintTicketView({ ticket, taxRate, negocio }: {
         <div className="text-center font-bold">{ticket.kind === "payment" ? "RECIBO DE PAGO" : "PRECUENTA"}</div>
         <div className="mt-1 flex items-start justify-between text-[11px]">
           <span>Ticket: {ticket.ticketId || "-"}</span>
-          <span>{ticket.timestamp.toLocaleString()}</span>
+          <span>{fmtFechaGt(ticket.timestamp)}</span>
         </div>
         <div className="mt-1 text-[11px]">
           <div>Mesa: {ticket.tableNumber ?? "-"}</div>
