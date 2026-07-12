@@ -2572,16 +2572,16 @@ export default function POSPage() {
             </DialogDescription>
           </DialogHeader>
           <Tabs defaultValue="sales" className="mt-2">
-            <TabsList className="flex flex-wrap h-auto gap-1">
-              <TabsTrigger value="sales" className="text-xs">Ventas</TabsTrigger>
-              <TabsTrigger value="payments" className="text-xs">Métodos Pago</TabsTrigger>
-              <TabsTrigger value="products" className="text-xs">Productos</TabsTrigger>
-              <TabsTrigger value="categories" className="text-xs">Categorías</TabsTrigger>
-              <TabsTrigger value="cancellations" className="text-xs">Anulaciones</TabsTrigger>
-              <TabsTrigger value="discounts" className="text-xs">Descuentos</TabsTrigger>
-              <TabsTrigger value="waiters" className="text-xs">Meseros</TabsTrigger>
-              <TabsTrigger value="reprint" className="text-xs">Reimprimir</TabsTrigger>
-              <TabsTrigger value="audit" className="text-xs">Auditoría</TabsTrigger>
+            <TabsList className="grid grid-cols-3 gap-2 h-auto bg-muted p-2">
+              <TabsTrigger value="sales" className="text-sm py-2.5">Ventas</TabsTrigger>
+              <TabsTrigger value="payments" className="text-sm py-2.5">Métodos Pago</TabsTrigger>
+              <TabsTrigger value="products" className="text-sm py-2.5">Productos</TabsTrigger>
+              <TabsTrigger value="categories" className="text-sm py-2.5">Categorías</TabsTrigger>
+              <TabsTrigger value="cancellations" className="text-sm py-2.5">Anulaciones</TabsTrigger>
+              <TabsTrigger value="discounts" className="text-sm py-2.5">Descuentos</TabsTrigger>
+              <TabsTrigger value="waiters" className="text-sm py-2.5">Meseros</TabsTrigger>
+              <TabsTrigger value="reprint" className="text-sm py-2.5">Reimprimir</TabsTrigger>
+              <TabsTrigger value="audit" className="text-sm py-2.5">Auditoría</TabsTrigger>
             </TabsList>
 
             {/* ── 1. Ventas del turno ── */}
@@ -2973,23 +2973,20 @@ export default function POSPage() {
               ) : (
                 <ScrollArea className="h-[350px]">
                   {payments.slice().reverse().map((p) => (
-                    <div key={p.id} className="flex items-center justify-between border-b py-2">
-                      <div>
-                        <div className="text-sm font-medium">Mesa {p.tableNumber} · {p.orderId}</div>
-                        <div className="text-xs text-muted-foreground">{p.timestamp.toLocaleString("es-GT", { timeZone: "America/Guatemala", dateStyle: "short", timeStyle: "short" })}{p.waiterName ? ` · ${p.waiterName}` : ""}</div>
+                    <div key={p.id} className="flex items-center justify-between gap-3 border-b py-3">
+                      <div className="min-w-0">
+                        <div className="text-base font-semibold truncate">Mesa {p.tableNumber} · <span className="text-primary">Q{p.amount.toFixed(2)}</span></div>
+                        <div className="text-xs text-muted-foreground truncate">{p.timestamp.toLocaleString("es-GT", { timeZone: "America/Guatemala", dateStyle: "short", timeStyle: "short" })}{p.waiterName ? ` · ${p.waiterName}` : ""}</div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-primary">Q{p.amount.toFixed(2)}</span>
-                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
-                          triggerPrintTicket({
-                            kind: "payment", ticketId: p.orderId, timestamp: p.timestamp,
-                            tableNumber: p.tableNumber, waiterName: p.waiterName || "-",
-                            serviceType: "mesa", diners: 1, items: p.items,
-                            discountAmount: p.discountAmount || 0, tenders: p.tenders, paidBy: p.userName,
-                          })
-                          setShowReportsDialog(false)
-                        }}>Reimprimir</Button>
-                      </div>
+                      <Button variant="outline" className="h-11 px-4 gap-1.5 shrink-0" onClick={() => {
+                        triggerPrintTicket({
+                          kind: "payment", ticketId: p.orderId, timestamp: p.timestamp,
+                          tableNumber: p.tableNumber, waiterName: p.waiterName || "-",
+                          serviceType: "mesa", diners: 1, items: p.items,
+                          discountAmount: p.discountAmount || 0, tenders: p.tenders, paidBy: p.userName,
+                        })
+                        setShowReportsDialog(false)
+                      }}><Printer className="w-4 h-4" />Reimprimir</Button>
                     </div>
                   ))}
                 </ScrollArea>
