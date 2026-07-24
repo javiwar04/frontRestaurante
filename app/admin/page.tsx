@@ -406,6 +406,15 @@ export default function AdminPage() {
   const [categories, setCategories] = useState<MenuCategory[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [modifierInsumos, setModifierInsumos] = useState<Insumo[]>([])
+  const modifierInsumosCatalogo = useMemo(() => {
+    const map = new Map<string, Insumo>()
+    modifierInsumos.forEach((i) => {
+      const key = `${i.nombre.trim().toLowerCase()}|${i.unidad.trim().toLowerCase()}`
+      const prev = map.get(key)
+      if (!prev || (prev.stockActual <= 0 && i.stockActual > 0)) map.set(key, i)
+    })
+    return Array.from(map.values()).sort((a, b) => a.nombre.localeCompare(b.nombre))
+  }, [modifierInsumos])
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [business, setBusiness] = useState<BusinessConfig>(defaultBusiness)
   const [taxConfig, setTaxConfig] = useState<TaxConfig>(defaultTax)
@@ -1065,7 +1074,7 @@ export default function AdminPage() {
 
           {/* ══ INVENTARIO (consolidado) ══ */}
           <TabsContent value="inventory" className="space-y-4">
-            <InventoryOverview />
+            <InventoryOverview onChanged={() => insumos.getAll("admin").then(setModifierInsumos).catch(() => {})} />
           </TabsContent>
 
           {/* ══ USUARIOS ══ */}
@@ -2398,7 +2407,7 @@ export default function AdminPage() {
                             <SelectTrigger className="h-7 text-xs w-40 shrink-0"><SelectValue placeholder="Sin rebaja" /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="none">Sin rebaja</SelectItem>
-                              {modifierInsumos.map(i => <SelectItem key={i.id} value={i.id}>{i.nombre} ({i.unidad})</SelectItem>)}
+                              {modifierInsumosCatalogo.map(i => <SelectItem key={i.id} value={i.id}>{i.nombre} ({i.unidad})</SelectItem>)}
                             </SelectContent>
                           </Select>
                           <Input

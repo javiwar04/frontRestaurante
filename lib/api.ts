@@ -929,8 +929,13 @@ export const insumos = {
   },
   getOne: (id: string, module = "inventory") =>
     apiFetch<Insumo>(`/insumos/${id}`, { module }),
-  create: (data: CreateInsumoRequest, module = "admin") =>
-    apiFetch<Insumo>("/insumos", { method: "POST", body: JSON.stringify(data), module }),
+  create: (data: CreateInsumoRequest, module = "admin", establecimientoId?: string) =>
+    apiFetch<Insumo>("/insumos", {
+      method: "POST",
+      body: JSON.stringify(data),
+      module,
+      headers: establecimientoId ? { "X-Establecimiento": establecimientoId } : undefined,
+    }),
   update: (id: string, data: Partial<CreateInsumoRequest> & { activo?: boolean }, module = "admin") =>
     apiFetch<Insumo>(`/insumos/${id}`, { method: "PUT", body: JSON.stringify(data), module }),
   remove: (id: string, module = "admin") =>
