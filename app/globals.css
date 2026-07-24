@@ -153,7 +153,14 @@
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  .no-print { display: none !important; }
+  .no-print,
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"],
+  [data-slot="sheet-overlay"],
+  [data-slot="sheet-content"],
+  [role="dialog"]:not(.print-only) {
+    display: none !important;
+  }
   .print-only {
     display: block !important;
     width: 80mm !important;
