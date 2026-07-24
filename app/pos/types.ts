@@ -140,6 +140,7 @@ export interface PrintReportData {
 /** Datos del negocio para el encabezado de tickets (de /config/negocio) */
 export interface NegocioInfo {
   nombre: string
+  sucursalNombre?: string | null
   direccion?: string | null
   telefono?: string | null
   ticketFooter?: string | null

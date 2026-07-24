@@ -253,6 +253,9 @@ export interface ModificadorOpcion {
   id: string
   nombre: string
   precioDelta: number
+  insumoId?: string | null
+  insumoNombre?: string | null
+  cantidadInsumo?: number | null
   esDefault: boolean
   activo: boolean
 }
@@ -286,6 +289,8 @@ export interface Platillo {
 export interface CreateModificadorOpcionRequest {
   nombre: string
   precioDelta: number
+  insumoId?: string | null
+  cantidadInsumo?: number | null
   esDefault?: boolean
   activo?: boolean
   orden?: number
@@ -428,6 +433,7 @@ export interface CorteInfo {
   totalOrdenes: number
   totalVentas: number
   porMetodoPago: Record<string, number>
+  notas?: string | null
 }
 
 export const turnos = {
@@ -701,6 +707,7 @@ export const usuarios = {
 
 export interface ConfigNegocio {
   nombre: string
+  sucursalNombre?: string | null
   rfc?: string | null
   direccion?: string | null
   telefono?: string | null
@@ -882,7 +889,7 @@ export const config = {
 export interface Insumo {
   id: string
   nombre: string
-  unidad: "kg" | "g" | "L" | "mL" | "pza" | "caja"
+  unidad: string
   stockActual: number
   stockMinimo: number
   costoUnitario: number
@@ -1095,6 +1102,32 @@ export interface ReporteMeseros {
   }[]
 }
 
+export interface ReporteInventario {
+  desde: string
+  hasta: string
+  totalEntradas: number
+  totalSalidasVenta: number
+  totalMermas: number
+  totalAjustes: number
+  valorSalidasVenta: number
+  insumos: {
+    insumoId: string
+    insumoNombre: string
+    unidad: string
+    cantidadEntrada: number
+    cantidadSalidaVenta: number
+    cantidadMerma: number
+    cantidadAjuste: number
+    valorSalidaVenta: number
+  }[]
+  necesidades: {
+    turnoId: string
+    usuarioNombre: string
+    cerradoEn: string
+    notas: string
+  }[]
+}
+
 function dateParams(desde?: string, hasta?: string, establecimiento?: string): string {
   const p = new URLSearchParams()
   if (desde) p.set("desde", desde)
@@ -1119,6 +1152,8 @@ export const reportes = {
   },
   meseros: (desde?: string, hasta?: string, module = "reports", establecimientoId?: string) =>
     apiFetch<ReporteMeseros>(`/reportes/meseros${dateParams(desde, hasta, establecimientoId)}`, { module }),
+  inventario: (desde?: string, hasta?: string, module = "reports", establecimientoId?: string) =>
+    apiFetch<ReporteInventario>(`/reportes/inventario${dateParams(desde, hasta, establecimientoId)}`, { module }),
 }
 
 // ─── Facturas ─────────────────────────────────────────────────────────────────

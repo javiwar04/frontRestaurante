@@ -10,7 +10,7 @@ import type { Orden, Pago } from "@/lib/api"
 export interface ReprintData {
   orden: Orden
   pago: Pago
-  negocio: { nombre?: string; direccion?: string | null; telefono?: string | null }
+  negocio: { nombre?: string; sucursalNombre?: string | null; direccion?: string | null; telefono?: string | null }
 }
 
 // Hora local de Guatemala (los timestamps se guardan en UTC).
@@ -31,10 +31,11 @@ export function ReprintReceiptView({ data }: { data: ReprintData | null }) {
   const tip = orden.propina || 0
 
   return (
-    <div className="print-only print-ticket mx-auto text-xs text-black">
+    <div className="print-only print-ticket text-xs text-black">
       <div className="p-3">
         <div className="text-center">
-          <div className="font-bold text-base leading-tight">{negocio.nombre || "Restaurante"}</div>
+          <div className="font-bold text-base leading-tight">{negocio.nombre || "Tacos Michoacán"}</div>
+          {negocio.sucursalNombre && <div className="text-[11px] font-semibold leading-tight">{negocio.sucursalNombre}</div>}
           {negocio.direccion && <div className="text-[10px] leading-tight">{negocio.direccion}</div>}
           {negocio.telefono && <div className="text-[10px] leading-tight">Tel: {negocio.telefono}</div>}
         </div>

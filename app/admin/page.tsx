@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation"
 import {
   getSession, clearSession, type AuthUser,
   usuarios, categoriasMenu, platillos as platillosApi, secciones, mesas, config, auditoria,
+  insumos,
   establecimientos as establecimientosApi, type Establecimiento,
   type Usuario, type AuditoriaEntry, type Seccion, type ComandaAdmin,
-  type ModificadorGrupo, type ModificadorOpcion,
+  type ModificadorGrupo, type ModificadorOpcion, type Insumo,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -334,6 +335,8 @@ export default function AdminPage() {
       setCategories(list.map(c => ({ id: c.id, name: c.nombre, order: c.orden, active: c.activa })))
     ).catch(() => {})
 
+    insumos.getAll("admin").then(setModifierInsumos).catch(() => {})
+
     establecimientosApi.getTodos("admin").then(list => {
       setSucursalesAdmin(list)
       if (list.length > 0) {
@@ -353,7 +356,12 @@ export default function AdminPage() {
           obligatorio: g.obligatorio ?? false,
           minSelecciones: g.minSelecciones ?? 0,
           maxSelecciones: g.maxSelecciones ?? 0,
-          opciones: (g.opciones || []).map(o => ({ ...o, activo: o.activo ?? true })),
+          opciones: (g.opciones || []).map(o => ({
+            ...o,
+            activo: o.activo ?? true,
+            insumoId: o.insumoId ?? null,
+            cantidadInsumo: o.cantidadInsumo ?? null,
+          })),
         })),
       })))
     ).catch(() => {})
@@ -397,6 +405,7 @@ export default function AdminPage() {
   const [rawSecciones, setRawSecciones] = useState<Seccion[]>([])
   const [categories, setCategories] = useState<MenuCategory[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [modifierInsumos, setModifierInsumos] = useState<Insumo[]>([])
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [business, setBusiness] = useState<BusinessConfig>(defaultBusiness)
   const [taxConfig, setTaxConfig] = useState<TaxConfig>(defaultTax)
@@ -724,6 +733,8 @@ export default function AdminPage() {
       opciones: g.opciones.map((o, oi) => ({
         nombre: o.nombre,
         precioDelta: o.precioDelta,
+        insumoId: o.insumoId || null,
+        cantidadInsumo: o.insumoId ? (Number(o.cantidadInsumo) || 1) : null,
         esDefault: o.esDefault,
         activo: o.activo,
         orden: oi,
@@ -783,7 +794,7 @@ export default function AdminPage() {
     setMenuItemForm(p => ({
       ...p,
       modificadores: p.modificadores.map((g, i) => i === gi ? {
-        ...g, opciones: [...g.opciones, { id: crypto.randomUUID(), nombre: "", precioDelta: 0, esDefault: false, activo: true }],
+        ...g, opciones: [...g.opciones, { id: crypto.randomUUID(), nombre: "", precioDelta: 0, insumoId: null, cantidadInsumo: null, esDefault: false, activo: true }],
       } : g),
     }))
   }
@@ -2380,6 +2391,26 @@ export default function AdminPage() {
                               className="h-7 text-xs w-16"
                               onChange={e => updateModOption(gi, oi, "precioDelta", Number(e.target.value))} />
                           </div>
+                          <Select value={opt.insumoId || "none"} onValueChange={v => {
+                            updateModOption(gi, oi, "insumoId", v === "none" ? null : v)
+                            updateModOption(gi, oi, "cantidadInsumo", v === "none" ? null : (opt.cantidadInsumo || 1))
+                          }}>
+                            <SelectTrigger className="h-7 text-xs w-40 shrink-0"><SelectValue placeholder="Sin rebaja" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Sin rebaja</SelectItem>
+                              {modifierInsumos.map(i => <SelectItem key={i.id} value={i.id}>{i.nombre} ({i.unidad})</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            disabled={!opt.insumoId}
+                            value={opt.cantidadInsumo ?? ""}
+                            className="h-7 text-xs w-20 shrink-0"
+                            onChange={e => updateModOption(gi, oi, "cantidadInsumo", Number(e.target.value))}
+                            placeholder="Cant."
+                          />
                           <div className="flex items-center gap-1 shrink-0" title="Activo">
                             <Checkbox checked={opt.activo}
                               onCheckedChange={v => updateModOption(gi, oi, "activo", !!v)} />

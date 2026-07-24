@@ -79,6 +79,7 @@ export default function POSPage() {
   const [cashMoveAmount, setCashMoveAmount] = useState(0)
   const [cashMoveReason, setCashMoveReason] = useState("")
   const [physicalCount, setPhysicalCount] = useState(0)
+  const [inventoryNeeds, setInventoryNeeds] = useState("")
   const [cashOpenLoading, setCashOpenLoading] = useState(false)
 
   // ─── Corte de inventario (obligatorio al cerrar turno) ──────────────────────
@@ -195,7 +196,7 @@ export default function POSPage() {
   const [printReport, setPrintReport] = useState<PrintReportData | null>(null)
 
   // Datos del negocio para el encabezado del ticket (de /config/negocio)
-  const [negocio, setNegocio] = useState<NegocioInfo>({ nombre: "Restaurante" })
+  const [negocio, setNegocio] = useState<NegocioInfo>({ nombre: "Tacos Michoacán" })
 
   const triggerPrintTicket = (ticket: PrintTicketData) => {
     setPrintReport(null)
@@ -554,7 +555,7 @@ export default function POSPage() {
     if (!sessionReady) return
     config.getNegocio("pos").then((n) => {
       if (n?.nombre) {
-        setNegocio({ nombre: n.nombre, direccion: n.direccion, telefono: n.telefono, ticketFooter: n.ticketFooter })
+        setNegocio({ nombre: n.nombre, sucursalNombre: n.sucursalNombre, direccion: n.direccion, telefono: n.telefono, ticketFooter: n.ticketFooter })
       }
     }).catch(() => { /* encabezado genérico */ })
   }, [sessionReady])
@@ -935,6 +936,7 @@ export default function POSPage() {
       `Efectivo esperado | Q${currentCash.toFixed(2)}`,
       `Efectivo contado | Q${physicalCount.toFixed(2)}`,
       `Diferencia | Q${diff.toFixed(2)}`,
+      ...(inventoryNeeds.trim() ? ["---", "## Necesidades de inventario", inventoryNeeds.trim()] : []),
       "---", "## Ventas por hora",
       ...Object.keys(hourMap).map(Number).sort((a, b) => a - b)
         .map((h) => `${String(h).padStart(2, "0")}:00 (${hourMap[h].count}) | Q${hourMap[h].total.toFixed(2)}`),
@@ -1023,10 +1025,11 @@ export default function POSPage() {
       }))
       setInitialCash(0)
       setPhysicalCount(0)
+      setInventoryNeeds("")
       setCurrentCash(0)
     }
     if (currentTurno?.id) {
-      turnos.cerrar(currentTurno.id, { efectivoFinalReal: physicalCount }, "pos")
+      turnos.cerrar(currentTurno.id, { efectivoFinalReal: physicalCount, notas: inventoryNeeds.trim() || undefined }, "pos")
         .then(doClose)
         .catch((e) => {
           toast({ title: "Error al cerrar turno", description: String((e as any)?.message ?? e), variant: "destructive" })
@@ -2510,6 +2513,15 @@ export default function POSPage() {
                 </span>
               </div>
             </div>
+            <div className="space-y-2">
+              <Label>Necesidades de inventario</Label>
+              <Textarea
+                rows={3}
+                value={inventoryNeeds}
+                onChange={(e) => setInventoryNeeds(e.target.value)}
+                placeholder="Ej: faltan vasos licuado, chocolate, leche..."
+              />
+            </div>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowCashClose(false)}>Cancelar</Button>
@@ -3103,4 +3115,3 @@ export default function POSPage() {
     </>)
   }
 }
-

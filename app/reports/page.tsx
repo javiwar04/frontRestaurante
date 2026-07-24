@@ -6,7 +6,7 @@ import {
   getSession, clearSession, type AuthUser,
   reportes, establecimientos as establecimientosApi,
   pagos as pagosApi, ordenes as ordenesApi, config as configApi,
-  type ReporteVentas, type ReportePlatillos, type ReporteMeseros, type Establecimiento, type Pago,
+  type ReporteVentas, type ReportePlatillos, type ReporteMeseros, type ReporteInventario, type Establecimiento, type Pago,
 } from "@/lib/api"
 import { ReprintReceiptView, type ReprintData } from "./reprint-receipt"
 import { Button } from "@/components/ui/button"
@@ -37,6 +37,7 @@ import {
   CircleDollarSign,
   Star,
   Printer,
+  Package,
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
@@ -169,8 +170,10 @@ export default function ReportsPage() {
   const [apiVentas, setApiVentas] = useState<ReporteVentas | null>(null)
   const [apiPlatillos, setApiPlatillos] = useState<ReportePlatillos | null>(null)
   const [apiMeseros, setApiMeseros] = useState<ReporteMeseros | null>(null)
+  const [apiInventario, setApiInventario] = useState<ReporteInventario | null>(null)
   const [apiVentasHoy, setApiVentasHoy] = useState<ReporteVentas | null>(null)
   const [apiPlatillosHoy, setApiPlatillosHoy] = useState<ReportePlatillos | null>(null)
+  const [apiInventarioHoy, setApiInventarioHoy] = useState<ReporteInventario | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -193,6 +196,7 @@ export default function ReportsPage() {
     reportes.ventas(desde, hasta, "reports", est).then(setApiVentas).catch((e) => toast({ title: "Error en reporte de ventas", description: String((e as any)?.message ?? e), variant: "destructive" }))
     reportes.platillos(desde, hasta, "reports", est).then(setApiPlatillos).catch((e) => toast({ title: "Error en reporte de productos", description: String((e as any)?.message ?? e), variant: "destructive" }))
     reportes.meseros(desde, hasta, "reports", est).then(setApiMeseros).catch((e) => toast({ title: "Error en reporte por mesero", description: String((e as any)?.message ?? e), variant: "destructive" }))
+    reportes.inventario(desde, hasta, "reports", est).then(setApiInventario).catch((e) => toast({ title: "Error en reporte de inventario", description: String((e as any)?.message ?? e), variant: "destructive" }))
   }, [user, period, rangeFrom, rangeTo, filtroSucursal])
 
   useEffect(() => {
@@ -202,6 +206,7 @@ export default function ReportsPage() {
     const est = filtroSucursal === "all" ? undefined : filtroSucursal
     reportes.ventas(toLocalDateTime(s), toLocalDateTime(e), "reports", est).then(setApiVentasHoy).catch(() => {})
     reportes.platillos(toLocalDateTime(s), toLocalDateTime(e), "reports", est).then(setApiPlatillosHoy).catch(() => {})
+    reportes.inventario(toLocalDateTime(s), toLocalDateTime(e), "reports", est).then(setApiInventarioHoy).catch(() => {})
   }, [user, filtroSucursal])
 
   useEffect(() => {
@@ -219,7 +224,7 @@ export default function ReportsPage() {
     if (!user) return
     pagosApi.getAll("reports").then(setReprintPagos).catch(() => {})
     configApi.getNegocio("reports")
-      .then((c) => setReprintNegocio({ nombre: c.nombre, direccion: c.direccion, telefono: c.telefono }))
+      .then((c) => setReprintNegocio({ nombre: c.nombre, sucursalNombre: c.sucursalNombre, direccion: c.direccion, telefono: c.telefono }))
       .catch(() => {})
   }, [user, filtroSucursal])
 
@@ -365,7 +370,8 @@ export default function ReportsPage() {
   )
 
   return (
-    <div className="min-h-screen bg-background">
+    <>
+    <div className="min-h-screen bg-background no-print">
       {/* Header */}
       <header className="border-b border-border bg-card sticky top-0 z-10">
         <div className="max-w-[1400px] mx-auto px-4 py-3">
@@ -388,10 +394,11 @@ export default function ReportsPage() {
 
       <div className="max-w-[1400px] mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-6 mb-6">
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-8 mb-6 h-auto">
             <TabsTrigger value="summary"><BarChart3 className="w-4 h-4 mr-1 hidden sm:inline" />Resumen</TabsTrigger>
             <TabsTrigger value="sales"><TrendingUp className="w-4 h-4 mr-1 hidden sm:inline" />Ventas</TabsTrigger>
             <TabsTrigger value="products"><UtensilsCrossed className="w-4 h-4 mr-1 hidden sm:inline" />Platillos</TabsTrigger>
+            <TabsTrigger value="inventory"><Package className="w-4 h-4 mr-1 hidden sm:inline" />Inventario</TabsTrigger>
             <TabsTrigger value="users"><Users className="w-4 h-4 mr-1 hidden sm:inline" />Meseros</TabsTrigger>
             <TabsTrigger value="history"><Receipt className="w-4 h-4 mr-1 hidden sm:inline" />Historial</TabsTrigger>
             <TabsTrigger value="reprint"><Printer className="w-4 h-4 mr-1 hidden sm:inline" />Reimprimir</TabsTrigger>
@@ -519,6 +526,36 @@ export default function ReportsPage() {
                 </CardContent>
               </Card>
             )}
+
+            <Card className="border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2"><Package className="w-4 h-4 text-primary" />Inventario del día</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-md border p-2">
+                    <div className="text-xs text-muted-foreground">Rebajado por ventas</div>
+                    <div className="font-bold">{(apiInventarioHoy?.totalSalidasVenta ?? 0).toFixed(2)}</div>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <div className="text-xs text-muted-foreground">Costo consumido</div>
+                    <div className="font-bold text-primary">Q{(apiInventarioHoy?.valorSalidasVenta ?? 0).toFixed(2)}</div>
+                  </div>
+                </div>
+                {(apiInventarioHoy?.insumos?.length ?? 0) > 0 ? (
+                  <div className="space-y-2">
+                    {apiInventarioHoy!.insumos.slice(0, 4).map(i => (
+                      <div key={i.insumoId} className="flex justify-between text-xs">
+                        <span className="truncate">{i.insumoNombre}</span>
+                        <span className="font-medium">{i.cantidadSalidaVenta.toFixed(2)} {i.unidad}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Sin rebajas registradas hoy.</p>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* ══ VENTAS POR PERIODO ══ */}
@@ -677,6 +714,74 @@ export default function ReportsPage() {
                 })}
               </div>
             )}
+          </TabsContent>
+
+          {/* ══ INVENTARIO ══ */}
+          <TabsContent value="inventory" className="space-y-5">
+            <div className="flex flex-col gap-3">
+              <h2 className="text-base font-semibold">Resumen de inventario</h2>
+              <PeriodSelector />
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              {[
+                { label: "Entradas", value: (apiInventario?.totalEntradas ?? 0).toFixed(2), color: "text-green-600" },
+                { label: "Rebajado por ventas", value: (apiInventario?.totalSalidasVenta ?? 0).toFixed(2), color: "text-primary" },
+                { label: "Mermas", value: (apiInventario?.totalMermas ?? 0).toFixed(2), color: "text-yellow-600" },
+                { label: "Ajustes", value: (apiInventario?.totalAjustes ?? 0).toFixed(2), color: "text-blue-600" },
+                { label: "Costo consumido", value: `Q${(apiInventario?.valorSalidasVenta ?? 0).toFixed(2)}`, color: "text-primary" },
+              ].map(k => (
+                <Card key={k.label} className="border-border">
+                  <CardContent className="p-4">
+                    <div className="text-xs text-muted-foreground">{k.label}</div>
+                    <div className={`text-xl font-bold ${k.color}`}>{k.value}</div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <Card className="border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">Insumos rebajados por ventas</CardTitle>
+                <CardDescription>Incluye recetas base y modificadores con insumo asignado</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {(apiInventario?.insumos?.length ?? 0) === 0 ? (
+                  <p className="text-sm text-muted-foreground">No hay movimientos de inventario en este periodo.</p>
+                ) : apiInventario!.insumos.map(i => (
+                  <div key={i.insumoId} className="grid grid-cols-[1fr_auto_auto] gap-3 items-center rounded-md border p-3 text-sm">
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{i.insumoNombre}</div>
+                      <div className="text-xs text-muted-foreground">Entradas {i.cantidadEntrada.toFixed(2)} · Mermas {i.cantidadMerma.toFixed(2)} · Ajustes {i.cantidadAjuste.toFixed(2)}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">{i.cantidadSalidaVenta.toFixed(2)} {i.unidad}</div>
+                      <div className="text-xs text-muted-foreground">venta</div>
+                    </div>
+                    <div className="text-right font-semibold text-primary">Q{i.valorSalidaVenta.toFixed(2)}</div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card className="border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">Necesidades anotadas en cierres</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {(apiInventario?.necesidades?.length ?? 0) === 0 ? (
+                  <p className="text-sm text-muted-foreground">No hay necesidades de inventario anotadas en este periodo.</p>
+                ) : apiInventario!.necesidades.map(n => (
+                  <div key={`${n.turnoId}-${n.cerradoEn}`} className="rounded-md border p-3 text-sm">
+                    <div className="flex justify-between gap-3 text-xs text-muted-foreground mb-1">
+                      <span>{n.usuarioNombre || "Caja"}</span>
+                      <span>{new Date(n.cerradoEn).toLocaleString("es-GT", { timeZone: "America/Guatemala", dateStyle: "short", timeStyle: "short" })}</span>
+                    </div>
+                    <p className="whitespace-pre-wrap">{n.notas}</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* ══ MESEROS ══ */}
@@ -886,8 +991,9 @@ export default function ReportsPage() {
         </Tabs>
       </div>
 
-      {/* Recibo oculto para reimpresión (solo visible al imprimir) */}
-      <ReprintReceiptView data={reprintData} />
     </div>
+    {/* Recibo oculto para reimpresión (solo visible al imprimir) */}
+    <ReprintReceiptView data={reprintData} />
+    </>
   )
 }

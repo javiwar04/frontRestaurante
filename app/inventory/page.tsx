@@ -56,7 +56,7 @@ import { toast } from "@/hooks/use-toast"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type UnitOfMeasure = "kg" | "g" | "lt" | "ml" | "pz" | "caja" | "bolsa" | "lata"
+type UnitOfMeasure = string
 
 interface Ingredient {
   id: string
@@ -153,14 +153,14 @@ const saveStoredMovements = (list: StockMovement[]) => {
 const toApiUnit = (u: UnitOfMeasure): Insumo["unidad"] => {
   if (u === "lt") return "L"
   if (u === "ml") return "mL"
-  if (u === "pz" || u === "bolsa" || u === "lata") return "pza"
-  return u as Insumo["unidad"]
+  if (u === "pz") return "pza"
+  return u.trim() || "pza"
 }
 const fromApiUnit = (u: string): UnitOfMeasure => {
   if (u === "L") return "lt"
   if (u === "mL") return "ml"
   if (u === "pza") return "pz"
-  return u as UnitOfMeasure
+  return u
 }
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
@@ -475,6 +475,30 @@ export default function InventoryPage() {
   }
 
   const totalInventoryValue = useMemo(() => ingredients.reduce((sum, i) => sum + i.stock * i.costPerUnit, 0), [ingredients])
+  const todayInventorySummary = useMemo(() => {
+    const now = new Date()
+    const todayMovements = movements.filter(m => {
+      const d = new Date(m.date)
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+    })
+    const totalBy = (predicate: (m: StockMovement) => boolean) =>
+      todayMovements.filter(predicate).reduce((sum, m) => sum + m.quantity, 0)
+    const salesByIngredient = new Map<string, number>()
+    todayMovements
+      .filter(m => m.type === "salida" && m.reason.toLowerCase().startsWith("venta"))
+      .forEach(m => salesByIngredient.set(m.ingredientId, (salesByIngredient.get(m.ingredientId) || 0) + m.quantity))
+
+    return {
+      entradas: totalBy(m => m.type === "entrada"),
+      salidasVenta: totalBy(m => m.type === "salida" && m.reason.toLowerCase().startsWith("venta")),
+      mermas: totalBy(m => m.type === "merma"),
+      ajustes: totalBy(m => m.type === "ajuste"),
+      ventasTop: Array.from(salesByIngredient.entries())
+        .map(([ingredientId, qty]) => ({ ingredientId, qty, ing: ingredients.find(i => i.id === ingredientId) }))
+        .sort((a, b) => b.qty - a.qty)
+        .slice(0, 6),
+    }
+  }, [ingredients, movements])
 
   // ─── Render ───────────────────────────────────────────────────────────────
   if (!user) return <div className="min-h-screen bg-background flex items-center justify-center">Cargando...</div>
@@ -598,6 +622,46 @@ export default function InventoryPage() {
                 </CardContent>
               </Card>
             )}
+
+            <Card className="border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Resumen del día</CardTitle>
+                <CardDescription>Movimientos de inventario registrados hoy en esta sucursal</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">Entradas</div>
+                    <div className="text-lg font-bold text-green-600">{todayInventorySummary.entradas.toFixed(2)}</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">Rebajado por ventas</div>
+                    <div className="text-lg font-bold text-primary">{todayInventorySummary.salidasVenta.toFixed(2)}</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">Mermas</div>
+                    <div className="text-lg font-bold text-yellow-600">{todayInventorySummary.mermas.toFixed(2)}</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">Ajustes</div>
+                    <div className="text-lg font-bold text-blue-600">{todayInventorySummary.ajustes.toFixed(2)}</div>
+                  </div>
+                </div>
+                {todayInventorySummary.ventasTop.length > 0 ? (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Insumos más rebajados por ventas</Label>
+                    {todayInventorySummary.ventasTop.map(({ ingredientId, qty, ing }) => (
+                      <div key={ingredientId} className="flex justify-between text-sm rounded-md border px-3 py-2">
+                        <span>{ing?.name || "Insumo eliminado"}</span>
+                        <span className="font-medium">{qty.toFixed(2)} {ing?.unit || ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Todavía no hay rebajas por venta registradas hoy.</p>
+                )}
+              </CardContent>
+            </Card>
 
             <Card className="border-border">
               <CardHeader className="pb-3">
@@ -901,10 +965,15 @@ export default function InventoryPage() {
               </div>
               <div className="space-y-1">
                 <Label>Unidad de medida</Label>
-                <Select value={ingredientForm.unit} onValueChange={v => setIngredientForm(p => ({ ...p, unit: v as UnitOfMeasure }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{units.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
-                </Select>
+                <Input
+                  list="inventory-units"
+                  value={ingredientForm.unit}
+                  onChange={e => setIngredientForm(p => ({ ...p, unit: e.target.value }))}
+                  placeholder="kg, pz, vaso, bote..."
+                />
+                <datalist id="inventory-units">
+                  {units.map(u => <option key={u} value={u} />)}
+                </datalist>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3">

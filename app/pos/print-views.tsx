@@ -17,7 +17,8 @@ function fmtFechaGt(d: Date): string {
 function TicketHeader({ negocio }: { negocio: NegocioInfo }) {
   return (
     <div className="text-center">
-      <div className="font-bold text-base leading-tight">{negocio.nombre || "Restaurante"}</div>
+      <div className="font-bold text-base leading-tight">{negocio.nombre || "Tacos Michoacán"}</div>
+      {negocio.sucursalNombre && <div className="text-[11px] font-semibold leading-tight">{negocio.sucursalNombre}</div>}
       {negocio.direccion && <div className="text-[10px] leading-tight">{negocio.direccion}</div>}
       {negocio.telefono && <div className="text-[10px] leading-tight">Tel: {negocio.telefono}</div>}
     </div>
@@ -37,7 +38,7 @@ export function PrintTicketView({ ticket, taxRate, negocio }: {
   const total = Math.max(0, sub - disc) + tax + tip
 
   return (
-    <div className="print-only print-ticket mx-auto text-xs text-black">
+    <div className="print-only print-ticket text-xs text-black">
       <div className="p-3">
         <TicketHeader negocio={negocio} />
         <div className="my-2 border-t border-dashed border-black" />
@@ -96,7 +97,7 @@ export function PrintReportView({ report, cashierName, negocio }: {
 }) {
   if (!report) return null
   return (
-    <div className="print-only print-ticket mx-auto text-xs text-black">
+    <div className="print-only print-ticket text-xs text-black">
       <div className="p-3">
         <TicketHeader negocio={negocio} />
         <div className="my-2 border-t border-dashed border-black" />
