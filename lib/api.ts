@@ -502,6 +502,7 @@ export interface Orden {
   descuento?: number
   propina?: number
   comensales?: number
+  clienteNombre?: string
   notas?: string
   creadoEn: string
   actualizadoEn?: string
@@ -512,6 +513,7 @@ export interface UpdateOrdenRequest {
   propina: number
   notas?: string | null
   comensales: number
+  clienteNombre?: string | null
 }
 
 export interface CreateOrdenItemRequest {
@@ -533,6 +535,8 @@ export interface CreateOrdenRequest {
   turnoId: string
   meseroId: string
   tipoServicio: "mesa" | "para_llevar" | "delivery"
+  comensales?: number
+  clienteNombre?: string | null
   notas?: string | null
   items: CreateOrdenItemRequest[]
 }
@@ -637,10 +641,13 @@ export interface PagoTender {
 export interface Pago {
   id: string
   ordenId: string
+  establecimientoId?: string | null
   turnoId: string
   meseroId?: string
   meseroNombre?: string
   montoTotal: number
+  ticketNumero?: number | null
+  ticketCorrelativo?: string | null
   facturado: boolean
   registradoEn: string
   tenders: PagoTender[]

@@ -29,6 +29,8 @@ export interface Payment {
   orderId: string
   tableNumber: number | string
   amount: number
+  ticketCorrelativo?: string
+  customerName?: string
   tenders: PaymentTenderDraft[]
   timestamp: Date
   userId: string
@@ -86,6 +88,7 @@ export type TableAccount = {
   startTime: number
   diners: number
   serviceType: "mesa" | "para_llevar" | "domicilio"
+  customerName: string
   status: "pendiente" | "en_cocina" | "lista" | "pagado"
   discountAmount: number
   items: OrderItem[]
@@ -125,6 +128,7 @@ export interface PrintTicketData {
   waiterName: string
   serviceType: string
   diners: number
+  customerName?: string
   items: OrderItem[]
   discountAmount: number
   tipAmount?: number

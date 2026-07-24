@@ -8,7 +8,7 @@ import {
   pagos as pagosApi, ordenes as ordenesApi, config as configApi,
   type ReporteVentas, type ReportePlatillos, type ReporteMeseros, type ReporteInventario, type Establecimiento, type Pago,
 } from "@/lib/api"
-import { ReprintReceiptView, type ReprintData } from "./reprint-receipt"
+import { buildReprintReceiptHtml, openThermalPrintWindow, printThermalHtml } from "@/lib/thermal-print"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -216,8 +216,7 @@ export default function ReportsPage() {
 
   // ── Reimpresión de cuentas (pagos del backend, persistentes) ────────────────
   const [reprintPagos, setReprintPagos] = useState<Pago[]>([])
-  const [reprintNegocio, setReprintNegocio] = useState<ReprintData["negocio"]>({})
-  const [reprintData, setReprintData] = useState<ReprintData | null>(null)
+  const [reprintNegocio, setReprintNegocio] = useState<{ nombre?: string; sucursalNombre?: string | null; direccion?: string | null; telefono?: string | null }>({})
   const [reprintingId, setReprintingId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -230,12 +229,12 @@ export default function ReportsPage() {
 
   const reimprimirPago = async (pago: Pago) => {
     setReprintingId(pago.id)
+    const printWindow = openThermalPrintWindow()
     try {
       const orden = await ordenesApi.getOne(pago.ordenId, "reports")
-      setReprintData({ orden, pago, negocio: reprintNegocio })
-      // Dar un tick para que el recibo se renderice antes de mandar a imprimir
-      setTimeout(() => window.print(), 120)
+      printThermalHtml("Reimprimir recibo", buildReprintReceiptHtml({ orden, pago, negocio: reprintNegocio }), printWindow)
     } catch (e) {
+      printWindow?.close()
       toast({ title: "No se pudo reimprimir", description: String((e as { message?: string })?.message ?? e), variant: "destructive" })
     } finally {
       setReprintingId(null)
@@ -992,8 +991,6 @@ export default function ReportsPage() {
       </div>
 
     </div>
-    {/* Recibo oculto para reimpresión (solo visible al imprimir) */}
-    <ReprintReceiptView data={reprintData} />
     </>
   )
 }

@@ -47,7 +47,7 @@ import {
   type PrintTicketData, type PrintReportData, type NegocioInfo,
 } from "./types"
 import { saveShiftData, loadShiftData, clearShiftData } from "./shift-storage"
-import { PrintTicketView, PrintReportView } from "./print-views"
+import { buildReportHtml, buildTicketHtml, printThermalHtml } from "@/lib/thermal-print"
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -118,6 +118,7 @@ export default function POSPage() {
   const [orderId, setOrderId] = useState<string | null>(null)
   const [orderStartTime, setOrderStartTime] = useState<Date | null>(null)
   const [diners, setDiners] = useState(1)
+  const [customerName, setCustomerName] = useState("Consumidor Final")
   const [serviceType, setServiceType] = useState<"mesa" | "para_llevar" | "domicilio">("mesa")
   const [orderStatus, setOrderStatus] = useState<"pendiente" | "en_cocina" | "lista" | "pagado">("pendiente")
   const [discountAmount, setDiscountAmount] = useState(0)
@@ -192,34 +193,18 @@ export default function POSPage() {
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([])
 
   // ─── Print ticket / report ─────────────────────────────────────────────────
-  const [printTicket, setPrintTicket] = useState<PrintTicketData | null>(null)
-  const [printReport, setPrintReport] = useState<PrintReportData | null>(null)
-
   // Datos del negocio para el encabezado del ticket (de /config/negocio)
   const [negocio, setNegocio] = useState<NegocioInfo>({ nombre: "Tacos Michoacán" })
 
   const triggerPrintTicket = (ticket: PrintTicketData) => {
-    setPrintReport(null)
-    setPrintTicket(ticket)
-    setTimeout(() => { if (typeof window !== "undefined") window.print() }, 150)
+    printThermalHtml("Ticket", buildTicketHtml(ticket, TAX_RATE, negocio))
   }
 
   const triggerPrintReport = (title: string, lines: string[]) => {
-    setPrintTicket(null)
-    setPrintReport({ title, lines })
-    setTimeout(() => { if (typeof window !== "undefined") window.print() }, 150)
+    const report: PrintReportData = { title, lines }
+    printThermalHtml(title, buildReportHtml(report, currentShift.userName, negocio))
   }
 
-  useEffect(() => {
-    const handleAfterPrint = () => {
-      setPrintReport(null)
-      setPrintTicket(null)
-    }
-    if (typeof window !== "undefined") {
-      window.addEventListener("afterprint", handleAfterPrint)
-      return () => window.removeEventListener("afterprint", handleAfterPrint)
-    }
-  }, [])
 
   // ─── Invoice form state ────────────────────────────────────────────────────
   const [invoiceCustomerName, setInvoiceCustomerName] = useState("")
@@ -452,7 +437,8 @@ export default function POSPage() {
           orderId: `TCK-${o.id}`,
           backendOrdenId: o.id,
           startTime: new Date(o.creadoEn).getTime(),
-          diners: 1,
+          diners: o.comensales || 1,
+          customerName: o.clienteNombre || "Consumidor Final",
           serviceType: o.tipoServicio === "delivery" ? "domicilio" : (o.tipoServicio as "mesa" | "para_llevar"),
           // Toda orden activa en backend ya fue enviada — "pendiente" aquí solo
           // significa que cocina aún no la inicia
@@ -600,13 +586,13 @@ export default function POSPage() {
         ...list[idx],
         orderId: orderId || list[idx].orderId,
         startTime: orderStartTime ? orderStartTime.getTime() : list[idx].startTime,
-        diners, serviceType, status: orderStatus, discountAmount,
+        diners, serviceType, customerName, status: orderStatus, discountAmount,
         items: currentOrder,
       }
       return { ...prev, [selectedTable.id]: next }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTable?.id, selectedAccountId, currentOrder, orderId, orderStartTime, diners, serviceType, orderStatus, discountAmount])
+  }, [selectedTable?.id, selectedAccountId, currentOrder, orderId, orderStartTime, diners, serviceType, customerName, orderStatus, discountAmount])
 
   // ═══════════════════════════════════════════════════════════════════════════
   // DERIVED VALUES
@@ -773,7 +759,7 @@ export default function POSPage() {
           ...list[idx],
           orderId: orderId || list[idx].orderId,
           startTime: orderStartTime ? orderStartTime.getTime() : list[idx].startTime,
-          diners, serviceType, status: orderStatus, discountAmount,
+          diners, serviceType, customerName, status: orderStatus, discountAmount,
           items: currentOrder,
         }
         return { ...prev, [selectedTable.id]: next }
@@ -784,6 +770,7 @@ export default function POSPage() {
     setOrderId(null)
     setOrderStartTime(null)
     setDiners(1)
+    setCustomerName("Consumidor Final")
     setServiceType("mesa")
     setOrderStatus("pendiente")
     setDiscountAmount(0)
@@ -803,6 +790,7 @@ export default function POSPage() {
     orderId: `TCK-${Date.now()}`,
     startTime: Date.now(),
     diners: seats,
+    customerName: "Consumidor Final",
     serviceType: "mesa",
     status: "pendiente",
     discountAmount: 0,
@@ -825,6 +813,7 @@ export default function POSPage() {
     setOrderId(acc.orderId)
     setOrderStartTime(new Date(acc.startTime))
     setDiners(acc.diners)
+    setCustomerName(acc.customerName || "Consumidor Final")
     setServiceType(acc.serviceType)
     setOrderStatus(acc.status)
     setDiscountAmount(acc.discountAmount)
@@ -1259,11 +1248,21 @@ export default function POSPage() {
           turnoId: currentTurno.id,
           meseroId: waiterId,
           tipoServicio: serviceType === "domicilio" ? "delivery" : serviceType,
+          comensales: diners,
+          clienteNombre: customerName.trim() || "Consumidor Final",
           items: pendingItems.map(buildItemPayload),
         }, "pos")
       }
 
       // Sincronizar items desde el backend (trae los ids reales de cada línea)
+      orden = await ordenes.update(orden.id, {
+        descuento: discountAmount,
+        propina: tipAmount,
+        notas: null,
+        comensales: diners,
+        clienteNombre: customerName.trim() || "Consumidor Final",
+      }, "pos")
+
       const syncedItems = mapOrdenItems(orden)
       setCurrentOrder(syncedItems)
       setOrderStatus("en_cocina")
@@ -1276,7 +1275,7 @@ export default function POSPage() {
           return {
             ...prev,
             [selectedTable.id]: list.map((a) =>
-              a.id === selectedAccountId ? { ...a, backendOrdenId: orden.id, status: "en_cocina", items: syncedItems } : a
+              a.id === selectedAccountId ? { ...a, backendOrdenId: orden.id, customerName: orden.clienteNombre || customerName.trim() || "Consumidor Final", status: "en_cocina", items: syncedItems } : a
             ),
           }
         })
@@ -1336,6 +1335,7 @@ export default function POSPage() {
     // Si el servidor lo rechaza, NO se marca como pagado localmente
     // (antes el pago local quedaba registrado aunque el backend fallara).
     let backendPagoId: string | undefined
+    let backendTicketCorrelativo: string | undefined
     if (currentTurno?.id) {
       try {
         let backendOrderId = getSelectedAccount()?.backendOrdenId
@@ -1349,6 +1349,8 @@ export default function POSPage() {
             turnoId: currentTurno.id,
             meseroId: waiter?.id || currentUser.id,
             tipoServicio: serviceType === "domicilio" ? "delivery" : serviceType,
+            comensales: diners,
+            clienteNombre: customerName.trim() || "Consumidor Final",
             items: currentOrder.map(buildItemPayload),
           }, "pos")
           backendOrderId = nueva.id
@@ -1361,11 +1363,13 @@ export default function POSPage() {
 
         // 2. Persistir descuento y propina (el backend recalcula impuestos y total;
         //    la propina se suma al total que los tenders deben cubrir)
-        if (discountAmount > 0 || tipAmount > 0) {
-          await ordenes.update(backendOrderId, {
-            descuento: discountAmount, propina: tipAmount, notas: null, comensales: diners,
-          }, "pos")
-        }
+        await ordenes.update(backendOrderId, {
+          descuento: discountAmount,
+          propina: tipAmount,
+          notas: null,
+          comensales: diners,
+          clienteNombre: customerName.trim() || "Consumidor Final",
+        }, "pos")
 
         // 3. Verificar que lo cobrado cubre el total según el servidor
         const backendOrden = await ordenes.getOne(backendOrderId, "pos")
@@ -1392,6 +1396,7 @@ export default function POSPage() {
           })),
         }, "pos")
         backendPagoId = pago.id
+        backendTicketCorrelativo = pago.ticketCorrelativo || undefined
       } catch (err) {
         const msg = String((err as any)?.message ?? err)
         if (msg.includes("ya está pagada")) {
@@ -1405,8 +1410,10 @@ export default function POSPage() {
     }
 
     const payment: Payment = {
-      id: `PAY-${Date.now()}`, backendPagoId, orderId: orderId || `ORD-${Date.now()}`,
+      id: `PAY-${Date.now()}`, backendPagoId, orderId: backendTicketCorrelativo || orderId || `ORD-${Date.now()}`,
       tableNumber: selectedTable.label, amount: calculateTotal(), tenders,
+      ticketCorrelativo: backendTicketCorrelativo,
+      customerName: customerName.trim() || "Consumidor Final",
       timestamp: new Date(), userId: currentUser.id, userName: currentUser.name,
       invoiced: false, items: currentOrder.map((i) => ({ ...i })),
       waiterId: waiter?.id, waiterName: waiter?.name,
@@ -1469,7 +1476,7 @@ export default function POSPage() {
 
     // Offer invoice immediately
     setCurrentPayment(payment)
-    setInvoiceCustomerName("")
+    setInvoiceCustomerName(payment.customerName || "")
     setInvoiceCustomerRFC("")
     setShowInvoiceDialog(true)
   }
@@ -1528,7 +1535,7 @@ export default function POSPage() {
         kind: "payment", ticketId: lastPayment.orderId, timestamp: lastPayment.timestamp,
         tableNumber: lastPayment.tableNumber,
         waiterName: lastPayment.waiterName || "-", serviceType,
-        diners, items: lastPayment.items, discountAmount: lastPayment.discountAmount,
+        diners, customerName: lastPayment.customerName || "Consumidor Final", items: lastPayment.items, discountAmount: lastPayment.discountAmount,
         tipAmount: lastPayment.tipAmount,
         tenders: lastPayment.tenders, paidBy: lastPayment.userName,
       })
@@ -1605,9 +1612,6 @@ export default function POSPage() {
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER — Print Ticket (hidden, only for print media)
   // ═══════════════════════════════════════════════════════════════════════════
-
-  const printTicketEl = <PrintTicketView ticket={printTicket} taxRate={TAX_RATE} negocio={negocio} />
-  const printReportEl = <PrintReportView report={printReport} cashierName={currentShift.userName} negocio={negocio} />
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER — Step 0: Cash Open (blocking)
@@ -1781,8 +1785,6 @@ export default function POSPage() {
 
       {/* Dialogs shared with tables view */}
       {renderDialogs()}
-      {printTicketEl}
-      {printReportEl}
       </>
     )
   }
@@ -1864,6 +1866,16 @@ export default function POSPage() {
                     <Button key={cat} variant={selectedCategory === cat ? "default" : "outline"} size="sm"
                       className="h-9 text-xs touch-manipulation" onClick={() => setSelectedCategory(cat)}>{cat}</Button>
                   ))}
+                </div>
+                <div className="mt-2 grid grid-cols-[auto_1fr] items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Cliente</Label>
+                  <Input
+                    className="h-8 text-sm"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    onBlur={() => setCustomerName((v) => v.trim() || "Consumidor Final")}
+                    placeholder="Consumidor Final"
+                  />
                 </div>
               </CardHeader>
               <CardContent>
@@ -2018,7 +2030,7 @@ export default function POSPage() {
                           timestamp: orderStartTime || new Date(),
                           tableNumber: selectedTable?.label, serviceType,
                           waiterName: selectedTable ? (waiters.find((w) => w.id === tableWaiter[selectedTable.id])?.name || "-") : "-",
-                          diners, items: currentOrder, discountAmount, tenders: [],
+                          diners, customerName: customerName.trim() || "Consumidor Final", items: currentOrder, discountAmount, tenders: [],
                         })
                       }}>Precuenta</Button>
                     <Button variant="outline" size="sm" disabled={currentOrder.length === 0}
@@ -2036,6 +2048,7 @@ export default function POSPage() {
                         setCurrentOrder([])
                         setOrderId(null)
                         setOrderStartTime(null)
+                        setCustomerName("Consumidor Final")
                         setDiscountAmount(0)
                         setOrderStatus("pendiente")
                         toast({ title: "Pedido cancelado" })
@@ -2053,8 +2066,6 @@ export default function POSPage() {
     </div>
 
     {renderDialogs()}
-    {printTicketEl}
-    {printReportEl}
     </>
   )
 
@@ -2979,6 +2990,7 @@ export default function POSPage() {
                           kind: "payment", ticketId: p.orderId, timestamp: p.timestamp,
                           tableNumber: p.tableNumber, waiterName: p.waiterName || "-",
                           serviceType: "mesa", diners: 1, items: p.items,
+                          customerName: p.customerName || "Consumidor Final",
                           discountAmount: p.discountAmount || 0, tenders: p.tenders, paidBy: p.userName,
                         })
                         setShowReportsDialog(false)
