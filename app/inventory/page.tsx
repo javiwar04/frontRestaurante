@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   getSession, clearSession, clearActiveEstablecimiento, type AuthUser,
   insumos, recetas, platillos as platillosApi, movimientos,
-  type Insumo,
+  type Insumo, type ModificadorGrupo,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -79,6 +79,7 @@ interface MenuItemDef {
   salePrice: number
   active: boolean
   notes: string
+  modifiers: ModificadorGrupo[]
 }
 
 interface RecipeLine {
@@ -91,6 +92,25 @@ interface Recipe {
   menuItemId: string
   lines: RecipeLine[]
   notes: string
+}
+
+interface ModifierAvailability {
+  groupName: string
+  optionName: string
+  ingredientName: string
+  unit: string
+  stock: number
+  quantity: number
+  portions: number
+}
+
+interface DishAvailability {
+  hasRecipe: boolean
+  recipePortions: number
+  modifierDetails: ModifierAvailability[]
+  modifierTotal: number
+  portions: number
+  source: "recipe" | "modifiers" | "mixed" | "none"
 }
 
 type MovementType = "entrada" | "salida" | "merma" | "ajuste"
@@ -171,7 +191,7 @@ const seedIngredients: Ingredient[] = [
   { id: "i3", name: "Queso amarillo", category: "Lácteos", unit: "kg", stock: 2, minStock: 3, costPerUnit: 90, proveedor: "", notes: "", active: true },
 ]
 
-const seedMenuItems: MenuItemDef[] = [
+const seedMenuItems: MenuItemDef[] = ([
   { id: "m1", name: "Hamburguesa Clásica", category: "Platos Principales", salePrice: 12.99, active: true, notes: "" },
   { id: "m2", name: "Pizza Margarita", category: "Platos Principales", salePrice: 14.99, active: true, notes: "" },
   { id: "m3", name: "Ensalada César", category: "Entradas", salePrice: 9.99, active: true, notes: "" },
@@ -182,7 +202,7 @@ const seedMenuItems: MenuItemDef[] = [
   { id: "m8", name: "Cerveza", category: "Bebidas", salePrice: 4.99, active: true, notes: "" },
   { id: "m9", name: "Tiramisú", category: "Postres", salePrice: 6.99, active: true, notes: "" },
   { id: "m10", name: "Helado", category: "Postres", salePrice: 5.99, active: true, notes: "" },
-]
+] as Omit<MenuItemDef, "modifiers">[]).map(item => ({ ...item, modifiers: [] }))
 
 const seedRecipes: Recipe[] = [
   { id: "r1", menuItemId: "m1", lines: [{ ingredientId: "i2", quantity: 1 }, { ingredientId: "i1", quantity: 0.15 }, { ingredientId: "i4", quantity: 0.03 }, { ingredientId: "i5", quantity: 0.05 }], notes: "" },
@@ -208,7 +228,7 @@ const movementTypes: { value: MovementType; label: string }[] = [
 
 // ─── Blank helpers ─────────────────────────────────────────────────────────────
 const blankIngredient = (): Omit<Ingredient, "id"> => ({ name: "", category: "Carnes", unit: "kg", stock: 0, minStock: 0, costPerUnit: 0, proveedor: "", notes: "", active: true })
-const blankMenuItem = (): Omit<MenuItemDef, "id"> => ({ name: "", category: "Platos Principales", salePrice: 0, active: true, notes: "" })
+const blankMenuItem = (): Omit<MenuItemDef, "id"> => ({ name: "", category: "Platos Principales", salePrice: 0, active: true, notes: "", modifiers: [] })
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
@@ -267,6 +287,7 @@ export default function InventoryPage() {
         salePrice: p.precio,
         active: p.disponible,
         notes: "",
+        modifiers: p.modificadores ?? [],
       })))
     ).catch(e => toast({ title: "Error al cargar platillos", description: String(e), variant: "destructive" }))
 
@@ -333,7 +354,7 @@ export default function InventoryPage() {
   const openNewMenuItem = () => { setEditingMenuItem(null); setMenuForm(blankMenuItem()); setShowMenuDialog(true) }
   const openEditMenuItem = (m: MenuItemDef) => {
     setEditingMenuItem(m)
-    setMenuForm({ name: m.name, category: m.category, salePrice: m.salePrice, active: m.active, notes: m.notes })
+    setMenuForm({ name: m.name, category: m.category, salePrice: m.salePrice, active: m.active, notes: m.notes, modifiers: m.modifiers })
     setShowMenuDialog(true)
   }
   const saveMenuItem = () => {
@@ -455,24 +476,102 @@ export default function InventoryPage() {
     return Array.from(merged).sort()
   }, [ingredients])
 
+  const ingredientsById = useMemo(() => new Map(ingredients.map(i => [i.id, i])), [ingredients])
+
   const recipeCost = (menuItemId: string): number => {
     const recipe = recipes.find(r => r.menuItemId === menuItemId)
     if (!recipe) return 0
     return recipe.lines.reduce((sum, line) => {
-      const ing = ingredients.find(i => i.id === line.ingredientId)
+      const ing = ingredientsById.get(line.ingredientId)
       return sum + (ing ? ing.costPerUnit * line.quantity : 0)
     }, 0)
   }
 
-  const canMakePortions = (menuItemId: string): number => {
+  const recipePortions = (menuItemId: string): number => {
     const recipe = recipes.find(r => r.menuItemId === menuItemId)
     if (!recipe || recipe.lines.length === 0) return Infinity
     return Math.floor(Math.min(...recipe.lines.map(line => {
-      const ing = ingredients.find(i => i.id === line.ingredientId)
+      const ing = ingredientsById.get(line.ingredientId)
       if (!ing || line.quantity <= 0) return Infinity
       return ing.stock / line.quantity
     })))
   }
+
+  const modifierAvailability = (menuItemId: string): ModifierAvailability[] => {
+    const item = menuItems.find(m => m.id === menuItemId)
+    if (!item) return []
+
+    return item.modifiers.flatMap(group =>
+      group.opciones
+        .filter(option => option.activo && option.insumoId && option.cantidadInsumo && option.cantidadInsumo > 0)
+        .map(option => {
+          const ing = ingredientsById.get(option.insumoId || "")
+          const quantity = option.cantidadInsumo || 0
+          const stock = ing?.stock ?? 0
+          return {
+            groupName: group.grupoNombre,
+            optionName: option.nombre,
+            ingredientName: option.insumoNombre || ing?.name || "Insumo",
+            unit: ing?.unit || "",
+            stock,
+            quantity,
+            portions: quantity > 0 ? Math.floor(stock / quantity) : 0,
+          }
+        })
+    )
+  }
+
+  const dishAvailability = (menuItemId: string): DishAvailability => {
+    const recipe = recipes.find(r => r.menuItemId === menuItemId)
+    const hasRecipe = !!recipe && recipe.lines.length > 0
+    const basePortions = recipePortions(menuItemId)
+    const modifierDetails = modifierAvailability(menuItemId)
+    const modifierTotal = modifierDetails.reduce((sum, detail) => sum + detail.portions, 0)
+
+    if (hasRecipe && modifierDetails.length > 0) {
+      return {
+        hasRecipe,
+        recipePortions: basePortions,
+        modifierDetails,
+        modifierTotal,
+        portions: Math.min(basePortions, modifierTotal),
+        source: "mixed",
+      }
+    }
+
+    if (modifierDetails.length > 0) {
+      return {
+        hasRecipe,
+        recipePortions: basePortions,
+        modifierDetails,
+        modifierTotal,
+        portions: modifierTotal,
+        source: "modifiers",
+      }
+    }
+
+    if (hasRecipe) {
+      return {
+        hasRecipe,
+        recipePortions: basePortions,
+        modifierDetails: [],
+        modifierTotal: 0,
+        portions: basePortions,
+        source: "recipe",
+      }
+    }
+
+    return {
+      hasRecipe,
+      recipePortions: Infinity,
+      modifierDetails: [],
+      modifierTotal: 0,
+      portions: Infinity,
+      source: "none",
+    }
+  }
+
+  const canMakePortions = (menuItemId: string): number => dishAvailability(menuItemId).portions
 
   const totalInventoryValue = useMemo(() => ingredients.reduce((sum, i) => sum + i.stock * i.costPerUnit, 0), [ingredients])
   const todayInventorySummary = useMemo(() => {
@@ -546,82 +645,102 @@ export default function InventoryPage() {
 
           {/* ══ DASHBOARD ══ */}
           <TabsContent value="dashboard" className="space-y-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Card className="border-border">
-                <CardContent className="p-4 flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Insumos activos</div>
-                    <div className="text-2xl font-bold">{ingredients.filter(i => i.active).length}</div>
-                  </div>
-                  <div className="rounded-lg bg-chart-2/15 p-2 mt-0.5 shrink-0">
-                    <ShoppingCart className="w-5 h-5 text-chart-2" />
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="border-border">
-                <CardContent className="p-4 flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Valor del inventario</div>
-                    <div className="text-2xl font-bold text-primary">Q{totalInventoryValue.toFixed(2)}</div>
-                  </div>
-                  <div className="rounded-lg bg-chart-1/15 p-2 mt-0.5 shrink-0">
-                    <TrendingUp className="w-5 h-5 text-chart-1" />
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="border-border">
-                <CardContent className="p-4 flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Platillos activos</div>
-                    <div className="text-2xl font-bold">{menuItems.filter(m => m.active).length}</div>
-                  </div>
-                  <div className="rounded-lg bg-chart-3/15 p-2 mt-0.5 shrink-0">
-                    <UtensilsCrossed className="w-5 h-5 text-chart-3" />
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className={`border-border ${lowStockIngredients.length > 0 ? "border-destructive bg-destructive/5" : ""}`}>
-                <CardContent className="p-4 flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Alertas de stock</div>
-                    <div className={`text-2xl font-bold ${lowStockIngredients.length > 0 ? "text-destructive" : ""}`}>{lowStockIngredients.length}</div>
-                  </div>
-                  <div className={`rounded-lg p-2 mt-0.5 shrink-0 ${lowStockIngredients.length > 0 ? "bg-destructive/10" : "bg-muted"}`}>
-                    <AlertTriangle className={`w-5 h-5 ${lowStockIngredients.length > 0 ? "text-destructive" : "text-muted-foreground"}`} />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {lowStockIngredients.length > 0 && (
-              <Card className="border-destructive">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2 text-destructive">
-                    <AlertTriangle className="w-4 h-4" />
-                    Insumos con stock bajo o agotado
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {lowStockIngredients.map(ing => (
-                        <div key={ing.id} className="flex items-center justify-between p-3 rounded-lg bg-destructive/5 border border-destructive/20">
-                          <div>
-                            <div className="font-medium text-sm">{ing.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              Stock: <span className="font-bold text-destructive">{ing.stock} {ing.unit}</span>
-                              {" "}· Mínimo: {ing.minStock} {ing.unit}
-                              {ing.proveedor ? <span> · {ing.proveedor}</span> : null}
+            <Card className="border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Disponibilidad de platillos</CardTitle>
+                <CardDescription>Porciones posibles según recetas, insumos y modificadores</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {menuItems.filter(m => m.active).map(m => {
+                    const availability = dishAvailability(m.id)
+                    const portions = availability.portions
+                    const cost = recipeCost(m.id)
+                    const margin = m.salePrice > 0 && cost > 0 ? ((m.salePrice - cost) / m.salePrice) * 100 : null
+                    const hasInventoryControl = availability.source !== "none"
+                    const status = !hasInventoryControl ? "sin-control" : portions === 0 ? "agotado" : portions <= 5 ? "bajo" : "ok"
+                    const detailLabel =
+                      availability.source === "mixed"
+                        ? `Base: ${availability.recipePortions === Infinity ? "∞" : availability.recipePortions} · Modificadores: ${availability.modifierTotal}`
+                        : availability.source === "modifiers"
+                          ? `${availability.modifierTotal} porciones por modificadores`
+                          : availability.source === "recipe"
+                            ? "Calculado por receta"
+                            : "Sin receta ni modificadores con insumo"
+                    return (
+                      <div key={m.id} className="rounded-md border border-border p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium">{m.name}</div>
+                            <div className="text-xs text-muted-foreground">{detailLabel}</div>
+                          </div>
+                          <Badge variant={status === "ok" ? "default" : status === "agotado" ? "destructive" : status === "bajo" ? "secondary" : "outline"} className="text-xs shrink-0">
+                            {status === "sin-control" ? "Sin control" : status === "agotado" ? "Agotado" : `${portions === Infinity ? "∞" : portions} porciones`}
+                          </Badge>
+                        </div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          Costo: Q{cost.toFixed(2)}{margin !== null ? ` · Margen: ${margin.toFixed(1)}%` : ""}
+                        </div>
+                        {availability.modifierDetails.length > 0 && (
+                          <div className="mt-3 rounded-md bg-muted/40 p-2">
+                            <div className="mb-2 text-xs font-medium text-muted-foreground">Detalle por opción</div>
+                            <div className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+                              {availability.modifierDetails.map((detail, idx) => (
+                                <div key={`${m.id}-${detail.groupName}-${detail.optionName}-${idx}`} className="flex items-center justify-between gap-2 rounded border bg-background px-2 py-1 text-xs">
+                                  <div className="min-w-0">
+                                    <div className="truncate font-medium">{detail.optionName}</div>
+                                    <div className="truncate text-muted-foreground">{detail.ingredientName} · {detail.stock.toFixed(2)} {detail.unit}</div>
+                                  </div>
+                                  <span className="shrink-0 font-semibold">{detail.portions}</span>
+                                </div>
+                              ))}
                             </div>
                           </div>
-                          <Button size="sm" variant="outline" className="bg-transparent" onClick={() => openMovement("entrada", ing.id)}>
-                            <TrendingUp className="w-3 h-3 mr-1" />Entrada
-                          </Button>
-                        </div>
-                    ))}
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Resumen operativo</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-md border p-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <ShoppingCart className="w-3.5 h-3.5" />
+                      Insumos activos
+                    </div>
+                    <div className="text-xl font-bold">{ingredients.filter(i => i.active).length}</div>
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                  <div className="rounded-md border p-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <TrendingUp className="w-3.5 h-3.5" />
+                      Valor inventario
+                    </div>
+                    <div className="text-xl font-bold text-primary">Q{totalInventoryValue.toFixed(2)}</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <UtensilsCrossed className="w-3.5 h-3.5" />
+                      Platillos activos
+                    </div>
+                    <div className="text-xl font-bold">{menuItems.filter(m => m.active).length}</div>
+                  </div>
+                  <div className={`rounded-md border p-3 ${lowStockIngredients.length > 0 ? "border-destructive/40 bg-destructive/5" : ""}`}>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      Alertas
+                    </div>
+                    <div className={`text-xl font-bold ${lowStockIngredients.length > 0 ? "text-destructive" : ""}`}>{lowStockIngredients.length}</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
             <Card className="border-border">
               <CardHeader className="pb-3">
@@ -663,36 +782,35 @@ export default function InventoryPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-border">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Disponibilidad de platillos</CardTitle>
-                <CardDescription>Porciones posibles según inventario actual</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {menuItems.filter(m => m.active).map(m => {
-                    const portions = canMakePortions(m.id)
-                    const hasRecipe = recipes.some(r => r.menuItemId === m.id)
-                    const cost = recipeCost(m.id)
-                    const margin = m.salePrice > 0 && cost > 0 ? ((m.salePrice - cost) / m.salePrice) * 100 : null
-                    const status = !hasRecipe ? "sin-receta" : portions === 0 ? "agotado" : portions <= 5 ? "bajo" : "ok"
-                    return (
-                      <div key={m.id} className="flex items-center justify-between p-2 rounded border border-border">
+            {lowStockIngredients.length > 0 && (
+              <Card className="border-destructive/40">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2 text-destructive">
+                    <AlertTriangle className="w-4 h-4" />
+                    Insumos con stock bajo o agotado
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
+                    {lowStockIngredients.map(ing => (
+                      <div key={ing.id} className="flex items-center justify-between gap-3 rounded-md border border-destructive/20 bg-destructive/5 p-3">
                         <div>
-                          <div className="text-sm font-medium">{m.name}</div>
+                          <div className="font-medium text-sm">{ing.name}</div>
                           <div className="text-xs text-muted-foreground">
-                            Costo: Q{cost.toFixed(2)}{margin !== null ? ` · Margen: ${margin.toFixed(1)}%` : ""}
+                            Stock: <span className="font-bold text-destructive">{ing.stock} {ing.unit}</span>
+                            {" "}· Mínimo: {ing.minStock} {ing.unit}
+                            {ing.proveedor ? <span> · {ing.proveedor}</span> : null}
                           </div>
                         </div>
-                        <Badge variant={status === "ok" ? "default" : status === "agotado" ? "destructive" : status === "bajo" ? "secondary" : "outline"} className="text-xs">
-                          {status === "sin-receta" ? "Sin receta" : status === "agotado" ? "Agotado" : `${portions === Infinity ? "∞" : portions} porciones`}
-                        </Badge>
+                        <Button size="sm" variant="outline" className="bg-transparent shrink-0" onClick={() => openMovement("entrada", ing.id)}>
+                          <TrendingUp className="w-3 h-3 mr-1" />Entrada
+                        </Button>
                       </div>
-                    )
-                  })}
-                </div>
-              </CardContent>
-            </Card>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* ══ INSUMOS ══ */}
