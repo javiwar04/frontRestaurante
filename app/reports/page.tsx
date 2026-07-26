@@ -8,7 +8,7 @@ import {
   pagos as pagosApi, ordenes as ordenesApi, config as configApi,
   type ReporteVentas, type ReportePlatillos, type ReporteMeseros, type ReporteInventario, type Establecimiento, type Pago,
 } from "@/lib/api"
-import { buildReprintReceiptHtml, openThermalPrintWindow, printThermalHtml } from "@/lib/thermal-print"
+import { buildReprintReceiptText, printThermalText } from "@/lib/thermal-print"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -229,12 +229,10 @@ export default function ReportsPage() {
 
   const reimprimirPago = async (pago: Pago) => {
     setReprintingId(pago.id)
-    const printWindow = openThermalPrintWindow()
     try {
       const orden = await ordenesApi.getOne(pago.ordenId, "reports")
-      printThermalHtml("Reimprimir recibo", buildReprintReceiptHtml({ orden, pago, negocio: reprintNegocio }), printWindow)
+      printThermalText("Reimprimir recibo", buildReprintReceiptText({ orden, pago, negocio: reprintNegocio }))
     } catch (e) {
-      printWindow?.close()
       toast({ title: "No se pudo reimprimir", description: String((e as { message?: string })?.message ?? e), variant: "destructive" })
     } finally {
       setReprintingId(null)

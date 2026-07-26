@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/hooks/use-toast"
-import { AlertTriangle, Eye, Package, Plus, RefreshCw } from "lucide-react"
+import { AlertTriangle, Building2, Eye, Package, Plus, RefreshCw } from "lucide-react"
 import { insumos as insumosApi, establecimientos as establecimientosApi, type Establecimiento, type Insumo } from "@/lib/api"
 
 const fmtQ = (n: number) => `Q${n.toFixed(2)}`
@@ -68,6 +68,9 @@ export function InventoryOverview({ onChanged }: { onChanged?: () => void }) {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<FormState>(blankForm())
   const [selectedGroup, setSelectedGroup] = useState<InventoryGroup | null>(null)
+  const [branchGroup, setBranchGroup] = useState<InventoryGroup | null>(null)
+  const [branchIds, setBranchIds] = useState<string[]>([])
+  const [savingBranches, setSavingBranches] = useState(false)
 
   useEffect(() => {
     establecimientosApi.getTodos("admin").then((list) => {
@@ -134,6 +137,61 @@ export function InventoryOverview({ onChanged }: { onChanged?: () => void }) {
   const openNew = () => {
     setForm({ ...blankForm(), sucursalIds: filtro === "all" ? sucursales.map((s) => s.id) : [filtro] })
     setShowForm(true)
+  }
+
+  const openBranches = (group: InventoryGroup) => {
+    setBranchGroup(group)
+    setBranchIds(group.rows.map((i) => i.establecimientoId).filter(Boolean) as string[])
+  }
+
+  const toggleBranch = (id: string) => {
+    setBranchIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
+  }
+
+  const saveBranches = async () => {
+    if (!branchGroup) return
+    if (branchIds.length === 0) { toast({ title: "Selecciona al menos una sucursal" }); return }
+
+    setSavingBranches(true)
+    try {
+      const base = branchGroup.rows[0]
+      const activeByBranch = new Map(branchGroup.rows.map((i) => [i.establecimientoId, i]))
+      const payload = {
+        nombre: branchGroup.nombre,
+        unidad: branchGroup.unidad,
+        stockActual: 0,
+        stockMinimo: base?.stockMinimo ?? 0,
+        costoUnitario: base?.costoUnitario ?? 0,
+      }
+
+      await Promise.all(sucursales.map((s) => {
+        const existing = activeByBranch.get(s.id)
+        const shouldExist = branchIds.includes(s.id)
+
+        if (existing && shouldExist) {
+          return insumosApi.update(existing.id, { activo: true }, "admin")
+        }
+
+        if (existing && !shouldExist) {
+          return insumosApi.update(existing.id, { activo: false }, "admin")
+        }
+
+        if (!existing && shouldExist) {
+          return insumosApi.create(payload, "admin", s.id)
+        }
+
+        return Promise.resolve()
+      }))
+
+      toast({ title: "Sucursales actualizadas", description: `${branchGroup.nombre} aplica en ${branchIds.length} sucursal(es).` })
+      setBranchGroup(null)
+      await load()
+      onChanged?.()
+    } catch (e) {
+      toast({ title: "No se pudo actualizar", description: String((e as { message?: string })?.message ?? e), variant: "destructive" })
+    } finally {
+      setSavingBranches(false)
+    }
   }
 
   const save = async () => {
@@ -227,7 +285,7 @@ export function InventoryOverview({ onChanged }: { onChanged?: () => void }) {
                   <th className="p-3 font-medium text-right">Stock total</th>
                   <th className="p-3 font-medium text-right">Minimo total</th>
                   <th className="p-3 font-medium text-right">Valor</th>
-                  <th className="p-3 font-medium text-right">Detalle</th>
+                  <th className="p-3 font-medium text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -249,10 +307,15 @@ export function InventoryOverview({ onChanged }: { onChanged?: () => void }) {
                       </td>
                       <td className="p-3 text-right text-muted-foreground">{g.minStock}</td>
                       <td className="p-3 text-right">{fmtQ(g.valor)}</td>
-                      <td className="p-3 text-right">
-                        <Button variant="outline" size="sm" className="h-8 bg-transparent" onClick={() => setSelectedGroup(g)}>
-                          <Eye className="w-3.5 h-3.5 mr-1" />Ver
-                        </Button>
+                      <td className="p-3">
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" size="sm" className="h-8 bg-transparent" onClick={() => openBranches(g)}>
+                            <Building2 className="w-3.5 h-3.5 mr-1" />Sucursales
+                          </Button>
+                          <Button variant="outline" size="sm" className="h-8 bg-transparent" onClick={() => setSelectedGroup(g)}>
+                            <Eye className="w-3.5 h-3.5 mr-1" />Ver
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -346,6 +409,43 @@ export function InventoryOverview({ onChanged }: { onChanged?: () => void }) {
               )
             })}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!branchGroup} onOpenChange={(open) => { if (!open) setBranchGroup(null) }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Sucursales de {branchGroup?.nombre}</DialogTitle>
+            <DialogDescription>
+              Marca las sucursales donde este insumo debe estar disponible. Las desmarcadas se ocultaran del inventario.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" className="h-8 bg-transparent" onClick={() => setBranchIds(sucursales.map((s) => s.id))}>Todas</Button>
+              <Button type="button" variant="outline" size="sm" className="h-8 bg-transparent" onClick={() => setBranchIds([])}>Ninguna</Button>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-2">
+              {sucursales.map((s) => {
+                const existing = branchGroup?.rows.find((i) => i.establecimientoId === s.id)
+                return (
+                  <label key={s.id} className="flex items-start gap-2 rounded-md border p-3 text-sm">
+                    <Checkbox checked={branchIds.includes(s.id)} onCheckedChange={() => toggleBranch(s.id)} />
+                    <span>
+                      <span className="block font-medium">{s.nombre}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {existing ? `Stock actual: ${existing.stockActual} ${existing.unidad}` : "Se creara con stock 0"}
+                      </span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBranchGroup(null)}>Cancelar</Button>
+            <Button onClick={saveBranches} disabled={savingBranches}>{savingBranches ? "Guardando..." : "Guardar sucursales"}</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

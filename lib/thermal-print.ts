@@ -80,6 +80,36 @@ export function printThermalHtml(title: string, bodyHtml: string, targetWindow?:
   }, 250)
 }
 
+export function printThermalText(title: string, textContent: string, targetWindow?: PrintableWindow) {
+  if (typeof window === "undefined") return
+
+  if (isAndroid()) {
+    targetWindow?.close()
+    openRawBt(textContent)
+    return
+  }
+
+  printThermalHtml(title, `<pre class="ticket">${escapeHtml(textContent)}</pre>`, targetWindow)
+}
+
+function openRawBt(textContent: string) {
+  const encoded = encodeURIComponent(textContent)
+  const directUrl = `rawbt:${encoded}`
+  const intentUrl = `intent:${encoded}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`
+
+  const link = document.createElement("a")
+  link.href = directUrl
+  link.style.display = "none"
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+
+  // Si Chrome no entrega el esquema rawbt directo, probar el Intent oficial.
+  window.setTimeout(() => {
+    if (!document.hidden) window.location.href = intentUrl
+  }, 700)
+}
+
 export function buildTicketHtml(ticket: PrintTicketData, taxRate: number, negocio: NegocioInfo) {
   const sub = ticket.items.reduce((s, i) => s + (i.price + getModifiersPrice(i.modifiers)) * i.quantity, 0)
   const disc = ticket.discountAmount || 0
@@ -123,6 +153,55 @@ export function buildTicketHtml(ticket: PrintTicketData, taxRate: number, negoci
   ].join(""))
 }
 
+export function buildTicketText(ticket: PrintTicketData, taxRate: number, negocio: NegocioInfo) {
+  const sub = ticket.items.reduce((s, i) => s + (i.price + getModifiersPrice(i.modifiers)) * i.quantity, 0)
+  const disc = ticket.discountAmount || 0
+  const tip = ticket.tipAmount || 0
+  const tax = Math.max(0, sub - disc) * taxRate
+  const total = Math.max(0, sub - disc) + tax + tip
+
+  const lines: string[] = [
+    centerLine(negocio.nombre || "Tacos Michoacan"),
+    ...(negocio.sucursalNombre ? [centerLine(negocio.sucursalNombre)] : []),
+    ...(negocio.direccion ? [centerLine(negocio.direccion)] : []),
+    ...(negocio.telefono ? [centerLine(`Tel: ${negocio.telefono}`)] : []),
+    dashLine(),
+    centerLine(ticket.kind === "payment" ? "RECIBO DE PAGO" : "PRECUENTA"),
+    twoCols(`Ticket: ${ticket.ticketId || "-"}`, fmtFechaGt(ticket.timestamp)),
+    `Mesa: ${ticket.tableNumber ?? "-"}`,
+    `Cliente: ${ticket.customerName || "Consumidor Final"}`,
+    `Mesero: ${ticket.waiterName || "-"}`,
+    `Comensales: ${ticket.diners || 1}`,
+    ...(ticket.kind === "payment" ? [`Cajero: ${ticket.paidBy || "-"}`] : []),
+    dashLine(),
+  ]
+
+  ticket.items.forEach((item) => {
+    const unit = item.price + getModifiersPrice(item.modifiers)
+    lines.push(twoCols(`${item.quantity} x ${item.name}`, `Q${(unit * item.quantity).toFixed(2)}`))
+    item.modifiers?.forEach((m) => lines.push(`  - ${m.group}: ${m.option}`))
+    if (item.notes) lines.push(`  Obs: ${item.notes}`)
+  })
+
+  lines.push(
+    dashLine(),
+    twoCols("Subtotal", `Q${sub.toFixed(2)}`),
+    ...(disc > 0 ? [twoCols("Descuento", `-Q${disc.toFixed(2)}`)] : []),
+    twoCols(`IVA (${(taxRate * 100).toFixed(0)}%)`, `Q${tax.toFixed(2)}`),
+    ...(tip > 0 ? [twoCols("Propina", `Q${tip.toFixed(2)}`)] : []),
+    dashLine(),
+    twoCols("Total", `Q${total.toFixed(2)}`),
+  )
+
+  if (ticket.kind === "payment" && ticket.tenders.length > 0) {
+    lines.push(dashLine(), "Forma de pago")
+    ticket.tenders.forEach((t) => lines.push(twoCols(tenderLabel(t.method, t.cardBatch, t.transferRef), `Q${t.amount.toFixed(2)}`)))
+  }
+
+  lines.push(dashLine(), centerLine(negocio.ticketFooter || "Gracias por su preferencia!"), "", "", "")
+  return lines.join("\n")
+}
+
 export function buildReportHtml(report: PrintReportData, cashierName: string, negocio: NegocioInfo) {
   return ticketShell([
     headerHtml(negocio),
@@ -143,6 +222,33 @@ export function buildReportHtml(report: PrintReportData, cashierName: string, ne
     separator(),
     center("*** Fin del reporte ***", "tiny"),
   ].join(""))
+}
+
+export function buildReportText(report: PrintReportData, cashierName: string, negocio: NegocioInfo) {
+  const lines: string[] = [
+    centerLine(negocio.nombre || "Tacos Michoacan"),
+    ...(negocio.sucursalNombre ? [centerLine(negocio.sucursalNombre)] : []),
+    ...(negocio.direccion ? [centerLine(negocio.direccion)] : []),
+    dashLine(),
+    centerLine(report.title || "REPORTE"),
+    centerLine(new Date().toLocaleString("es-GT")),
+    centerLine(`Cajero: ${cashierName}`),
+    dashLine(),
+  ]
+
+  report.lines.forEach((line) => {
+    if (line === "---") lines.push(dashLine())
+    else if (line.startsWith("##")) lines.push(line.slice(2).trim())
+    else if (line.includes("|")) {
+      const [left, right] = line.split("|").map((s) => s.trim())
+      lines.push(twoCols(left, right))
+    } else {
+      lines.push(line)
+    }
+  })
+
+  lines.push(dashLine(), centerLine("*** Fin del reporte ***"), "", "", "")
+  return lines.join("\n")
 }
 
 export function buildReprintReceiptHtml(data: {
@@ -192,6 +298,58 @@ export function buildReprintReceiptHtml(data: {
   ].join(""))
 }
 
+export function buildReprintReceiptText(data: {
+  orden: Orden
+  pago: Pago
+  negocio: { nombre?: string; sucursalNombre?: string | null; direccion?: string | null; telefono?: string | null }
+}) {
+  const { orden, pago, negocio } = data
+  const desc = orden.descuento || 0
+  const tip = orden.propina || 0
+  const lines: string[] = [
+    centerLine(negocio.nombre || "Tacos Michoacan"),
+    ...(negocio.sucursalNombre ? [centerLine(negocio.sucursalNombre)] : []),
+    ...(negocio.direccion ? [centerLine(negocio.direccion)] : []),
+    ...(negocio.telefono ? [centerLine(`Tel: ${negocio.telefono}`)] : []),
+    dashLine(),
+    centerLine("RECIBO DE PAGO"),
+    centerLine("(reimpresion)"),
+    twoCols(`Ticket: ${pago.ticketCorrelativo || pago.ordenId}`, fmtFechaGt(pago.registradoEn)),
+    `Mesa: ${orden.numeroMesa ?? "-"}`,
+    `Cliente: ${orden.clienteNombre || "Consumidor Final"}`,
+    `Mesero: ${orden.meseroNombre || pago.meseroNombre || "-"}`,
+    `Comensales: ${orden.comensales || 1}`,
+    dashLine(),
+  ]
+
+  orden.items.forEach((item) => {
+    const delta = (item.modificadores || []).reduce((s, m) => s + (m.precioDelta || 0), 0)
+    const unit = item.precioUnitario + delta
+    const nombre = item.platilloNombre || item.nombre || "Producto"
+    lines.push(twoCols(`${item.cantidad} x ${nombre}`, `Q${(unit * item.cantidad).toFixed(2)}`))
+    item.modificadores?.forEach((m) => lines.push(`  - ${m.grupoNombre}: ${m.opcionNombre}`))
+    if (item.notas) lines.push(`  Obs: ${item.notas}`)
+  })
+
+  lines.push(
+    dashLine(),
+    twoCols("Subtotal", `Q${orden.subtotal.toFixed(2)}`),
+    ...(desc > 0 ? [twoCols("Descuento", `-Q${desc.toFixed(2)}`)] : []),
+    twoCols("IVA", `Q${orden.impuestos.toFixed(2)}`),
+    ...(tip > 0 ? [twoCols("Propina", `Q${tip.toFixed(2)}`)] : []),
+    dashLine(),
+    twoCols("Total", `Q${orden.total.toFixed(2)}`),
+  )
+
+  if (pago.tenders.length > 0) {
+    lines.push(dashLine(), "Forma de pago")
+    pago.tenders.forEach((t) => lines.push(twoCols(tenderLabel(t.metodo, t.referenciaLote, t.referenciaTransf), `Q${t.monto.toFixed(2)}`)))
+  }
+
+  lines.push(dashLine(), centerLine("Gracias por su preferencia!"), "", "", "")
+  return lines.join("\n")
+}
+
 function ticketShell(inner: string) {
   return `<div class="ticket">${inner}</div>`
 }
@@ -209,6 +367,31 @@ function tenderLabel(method: string, cardBatch?: string | null, transferRef?: st
   const base = METHOD_LABEL[method] || method
   const ref = cardBatch || transferRef
   return ref ? `${base} (${ref})` : base
+}
+
+function isAndroid() {
+  return /Android/i.test(window.navigator.userAgent)
+}
+
+function dashLine() {
+  return "-".repeat(42)
+}
+
+function centerLine(value: unknown, width = 42) {
+  const textValue = plainText(value).slice(0, width)
+  const left = Math.max(0, Math.floor((width - textValue.length) / 2))
+  return `${" ".repeat(left)}${textValue}`
+}
+
+function twoCols(left: unknown, right: unknown, width = 42) {
+  const rightText = plainText(right)
+  const available = Math.max(1, width - rightText.length - 1)
+  const leftText = plainText(left).slice(0, available)
+  return `${leftText}${" ".repeat(Math.max(1, width - leftText.length - rightText.length))}${rightText}`
+}
+
+function plainText(value: unknown) {
+  return String(value ?? "").replace(/\s+/g, " ").trim()
 }
 
 function fmtFechaGt(value: Date | string): string {

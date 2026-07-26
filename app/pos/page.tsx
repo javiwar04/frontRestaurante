@@ -47,7 +47,7 @@ import {
   type PrintTicketData, type PrintReportData, type NegocioInfo,
 } from "./types"
 import { saveShiftData, loadShiftData, clearShiftData } from "./shift-storage"
-import { buildReportHtml, buildTicketHtml, printThermalHtml } from "@/lib/thermal-print"
+import { buildReportText, buildTicketText, printThermalText } from "@/lib/thermal-print"
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -197,12 +197,12 @@ export default function POSPage() {
   const [negocio, setNegocio] = useState<NegocioInfo>({ nombre: "Tacos Michoacán" })
 
   const triggerPrintTicket = (ticket: PrintTicketData) => {
-    printThermalHtml("Ticket", buildTicketHtml(ticket, TAX_RATE, negocio))
+    printThermalText("Ticket", buildTicketText(ticket, TAX_RATE, negocio))
   }
 
   const triggerPrintReport = (title: string, lines: string[]) => {
     const report: PrintReportData = { title, lines }
-    printThermalHtml(title, buildReportHtml(report, currentShift.userName, negocio))
+    printThermalText(title, buildReportText(report, currentShift.userName, negocio))
   }
 
 
