@@ -167,7 +167,8 @@ export function buildTicketText(ticket: PrintTicketData, taxRate: number, negoci
     ...(negocio.telefono ? [centerLine(`Tel: ${negocio.telefono}`)] : []),
     dashLine(),
     centerLine(ticket.kind === "payment" ? "RECIBO DE PAGO" : "PRECUENTA"),
-    twoCols(`Ticket: ${ticket.ticketId || "-"}`, fmtFechaGt(ticket.timestamp)),
+    `Ticket: ${ticket.ticketId || "-"}`,
+    `Fecha: ${fmtFechaGt(ticket.timestamp)}`,
     `Mesa: ${ticket.tableNumber ?? "-"}`,
     `Cliente: ${ticket.customerName || "Consumidor Final"}`,
     `Mesero: ${ticket.waiterName || "-"}`,
@@ -314,7 +315,8 @@ export function buildReprintReceiptText(data: {
     dashLine(),
     centerLine("RECIBO DE PAGO"),
     centerLine("(reimpresion)"),
-    twoCols(`Ticket: ${pago.ticketCorrelativo || pago.ordenId}`, fmtFechaGt(pago.registradoEn)),
+    `Ticket: ${pago.ticketCorrelativo || pago.ordenId}`,
+    `Fecha: ${fmtFechaGt(pago.registradoEn)}`,
     `Mesa: ${orden.numeroMesa ?? "-"}`,
     `Cliente: ${orden.clienteNombre || "Consumidor Final"}`,
     `Mesero: ${orden.meseroNombre || pago.meseroNombre || "-"}`,
@@ -374,16 +376,16 @@ function isAndroid() {
 }
 
 function dashLine() {
-  return "-".repeat(42)
+  return "-".repeat(36)
 }
 
-function centerLine(value: unknown, width = 42) {
+function centerLine(value: unknown, width = 36) {
   const textValue = plainText(value).slice(0, width)
   const left = Math.max(0, Math.floor((width - textValue.length) / 2))
   return `${" ".repeat(left)}${textValue}`
 }
 
-function twoCols(left: unknown, right: unknown, width = 42) {
+function twoCols(left: unknown, right: unknown, width = 36) {
   const rightText = plainText(right)
   const available = Math.max(1, width - rightText.length - 1)
   const leftText = plainText(left).slice(0, available)
