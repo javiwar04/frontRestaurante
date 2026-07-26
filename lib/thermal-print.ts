@@ -11,7 +11,7 @@ const METHOD_LABEL: Record<string, string> = {
   transfer: "Deposito",
 }
 
-const THERMAL_TEXT_COLUMNS = 42
+const THERMAL_TEXT_COLUMNS = 48
 
 export function openThermalPrintWindow(): PrintableWindow {
   if (typeof window === "undefined") return null
@@ -201,7 +201,7 @@ export function buildTicketText(ticket: PrintTicketData, taxRate: number, negoci
     ticket.tenders.forEach((t) => lines.push(twoCols(tenderLabel(t.method, t.cardBatch, t.transferRef), `Q${t.amount.toFixed(2)}`)))
   }
 
-  lines.push(dashLine(), centerLine(negocio.ticketFooter || "Gracias por su preferencia!"), "", "", "")
+  lines.push(dashLine(), centerLine(negocio.ticketFooter || "Gracias por su preferencia!"), "")
   return lines.join("\n")
 }
 
@@ -250,7 +250,7 @@ export function buildReportText(report: PrintReportData, cashierName: string, ne
     }
   })
 
-  lines.push(dashLine(), centerLine("*** Fin del reporte ***"), "", "", "")
+  lines.push(dashLine(), centerLine("*** Fin del reporte ***"), "")
   return lines.join("\n")
 }
 
@@ -350,7 +350,7 @@ export function buildReprintReceiptText(data: {
     pago.tenders.forEach((t) => lines.push(twoCols(tenderLabel(t.metodo, t.referenciaLote, t.referenciaTransf), `Q${t.monto.toFixed(2)}`)))
   }
 
-  lines.push(dashLine(), centerLine("Gracias por su preferencia!"), "", "", "")
+  lines.push(dashLine(), centerLine("Gracias por su preferencia!"), "")
   return lines.join("\n")
 }
 
