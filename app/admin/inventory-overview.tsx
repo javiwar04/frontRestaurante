@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/hooks/use-toast"
-import { AlertTriangle, Building2, Eye, Package, Plus, RefreshCw } from "lucide-react"
+import { AlertTriangle, Building2, Eye, Package, Pencil, Plus, RefreshCw } from "lucide-react"
 import { insumos as insumosApi, establecimientos as establecimientosApi, type Establecimiento, type Insumo } from "@/lib/api"
 
 const fmtQ = (n: number) => `Q${n.toFixed(2)}`
@@ -67,6 +67,7 @@ export function InventoryOverview({ onChanged }: { onChanged?: () => void }) {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<FormState>(blankForm())
+  const [editingGroup, setEditingGroup] = useState<InventoryGroup | null>(null)
   const [selectedGroup, setSelectedGroup] = useState<InventoryGroup | null>(null)
   const [branchGroup, setBranchGroup] = useState<InventoryGroup | null>(null)
   const [branchIds, setBranchIds] = useState<string[]>([])
@@ -135,7 +136,22 @@ export function InventoryOverview({ onChanged }: { onChanged?: () => void }) {
   }
 
   const openNew = () => {
+    setEditingGroup(null)
     setForm({ ...blankForm(), sucursalIds: filtro === "all" ? sucursales.map((s) => s.id) : [filtro] })
+    setShowForm(true)
+  }
+
+  const openEdit = (group: InventoryGroup) => {
+    const base = group.rows[0]
+    setEditingGroup(group)
+    setForm({
+      nombre: group.nombre,
+      unidad: group.unidad,
+      stockActual: String(base?.stockActual ?? 0),
+      stockMinimo: String(base?.stockMinimo ?? 0),
+      costoUnitario: String(base?.costoUnitario ?? 0),
+      sucursalIds: group.rows.map((i) => i.establecimientoId).filter(Boolean) as string[],
+    })
     setShowForm(true)
   }
 
@@ -207,6 +223,31 @@ export function InventoryOverview({ onChanged }: { onChanged?: () => void }) {
       const stockActual = Number(form.stockActual) || 0
       const stockMinimo = Number(form.stockMinimo) || 0
       const costoUnitario = Number(form.costoUnitario) || 0
+
+      if (editingGroup) {
+        const rowsByBranch = new Map(editingGroup.rows.map((i) => [i.establecimientoId, i]))
+        await Promise.all(sucursales.map((s) => {
+          const existing = rowsByBranch.get(s.id)
+          const shouldExist = sucursalIds.includes(s.id)
+
+          if (existing) {
+            return insumosApi.update(existing.id, { nombre, unidad, stockMinimo, costoUnitario, activo: shouldExist }, "admin")
+          }
+
+          if (shouldExist) {
+            return insumosApi.create({ nombre, unidad, stockActual: 0, stockMinimo, costoUnitario }, "admin", s.id)
+          }
+
+          return Promise.resolve()
+        }))
+
+        toast({ title: "Insumo actualizado", description: `Aplicado en ${sucursalIds.length} sucursal(es).` })
+        setEditingGroup(null)
+        setShowForm(false)
+        await load()
+        onChanged?.()
+        return
+      }
 
       await Promise.all(sucursalIds.map((establecimientoId) => {
         const existing = all.find((i) =>
@@ -312,6 +353,9 @@ export function InventoryOverview({ onChanged }: { onChanged?: () => void }) {
                           <Button variant="outline" size="sm" className="h-8 bg-transparent" onClick={() => openBranches(g)}>
                             <Building2 className="w-3.5 h-3.5 mr-1" />Sucursales
                           </Button>
+                          <Button variant="outline" size="sm" className="h-8 bg-transparent" onClick={() => openEdit(g)}>
+                            <Pencil className="w-3.5 h-3.5 mr-1" />Editar
+                          </Button>
                           <Button variant="outline" size="sm" className="h-8 bg-transparent" onClick={() => setSelectedGroup(g)}>
                             <Eye className="w-3.5 h-3.5 mr-1" />Ver
                           </Button>
@@ -331,10 +375,10 @@ export function InventoryOverview({ onChanged }: { onChanged?: () => void }) {
         </CardContent>
       </Card>
 
-      <Dialog open={showForm} onOpenChange={setShowForm}>
+      <Dialog open={showForm} onOpenChange={(open) => { setShowForm(open); if (!open) setEditingGroup(null) }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Agregar insumo</DialogTitle>
+            <DialogTitle>{editingGroup ? "Editar insumo" : "Agregar insumo"}</DialogTitle>
             <DialogDescription>Se creara o actualizara el mismo insumo en las sucursales seleccionadas.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
