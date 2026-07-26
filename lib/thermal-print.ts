@@ -11,6 +11,8 @@ const METHOD_LABEL: Record<string, string> = {
   transfer: "Deposito",
 }
 
+const THERMAL_TEXT_COLUMNS = 42
+
 export function openThermalPrintWindow(): PrintableWindow {
   if (typeof window === "undefined") return null
   return window.open("", "_blank", "popup=yes,width=360,height=640")
@@ -376,16 +378,16 @@ function isAndroid() {
 }
 
 function dashLine() {
-  return "-".repeat(36)
+  return "-".repeat(THERMAL_TEXT_COLUMNS)
 }
 
-function centerLine(value: unknown, width = 36) {
+function centerLine(value: unknown, width = THERMAL_TEXT_COLUMNS) {
   const textValue = plainText(value).slice(0, width)
   const left = Math.max(0, Math.floor((width - textValue.length) / 2))
   return `${" ".repeat(left)}${textValue}`
 }
 
-function twoCols(left: unknown, right: unknown, width = 36) {
+function twoCols(left: unknown, right: unknown, width = THERMAL_TEXT_COLUMNS) {
   const rightText = plainText(right)
   const available = Math.max(1, width - rightText.length - 1)
   const leftText = plainText(left).slice(0, available)
