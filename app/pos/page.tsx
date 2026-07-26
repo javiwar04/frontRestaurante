@@ -412,8 +412,10 @@ export default function POSPage() {
 
       // Restore accounts from active orders
       const restoredAccounts: Record<string, TableAccount[]> = {}
+      const restoredWaiters: Record<string, string> = {}
       activeOrdenes.forEach((o) => {
         if (!o.mesaId) return
+        if (o.meseroId && !restoredWaiters[o.mesaId]) restoredWaiters[o.mesaId] = o.meseroId
         const items: OrderItem[] = o.items.map((i) => ({
           id: i.platilloId,
           backendItemId: Number(i.id),
@@ -465,6 +467,7 @@ export default function POSPage() {
         }
         return next
       })
+      setTableWaiter((prev) => ({ ...restoredWaiters, ...prev }))
     }).catch(() => {})
   }, [sessionReady, cashOpen, selectedSectorId])
 
@@ -662,6 +665,28 @@ export default function POSPage() {
       sent: true,
       status: i.estado === "listo" ? "listo" as const : i.estado === "entregado" ? "entregado" as const : "en_cocina" as const,
     }))
+
+  const buildAccountFromOrden = (orden: Orden, labelIndex = 1): TableAccount => ({
+    id: `ACC-restored-${orden.id}`,
+    label: `Cuenta ${labelIndex}`,
+    orderId: `TCK-${orden.id}`,
+    backendOrdenId: orden.id,
+    startTime: new Date(orden.creadoEn).getTime(),
+    diners: orden.comensales || 1,
+    customerName: orden.clienteNombre || "Consumidor Final",
+    serviceType: orden.tipoServicio === "delivery" ? "domicilio" : (orden.tipoServicio as "mesa" | "para_llevar"),
+    status: (orden.estado === "lista" || orden.estado === "servido") ? "lista" : "en_cocina",
+    discountAmount: orden.descuento || 0,
+    items: mapOrdenItems(orden),
+  })
+
+  const pickPreferredAccount = (accounts: TableAccount[]): TableAccount => {
+    const account = accounts.find((a) => a.status !== "pagado" && a.items.length > 0)
+      || accounts.find((a) => a.status !== "pagado")
+      || accounts[0]
+    if (!account) throw new Error("No hay cuentas disponibles para esta mesa")
+    return account
+  }
 
   const calculateSubtotal = () =>
     currentOrder.reduce((sum, item) => sum + (item.price + getModifiersPrice(item.modifiers)) * item.quantity, 0)
@@ -1057,20 +1082,45 @@ export default function POSPage() {
   }
 
   // ─── Table selection ───────────────────────────────────────────────────────
-  const handleSelectAreaTable = (areaTable: SectorTable) => {
+  const handleSelectAreaTable = async (areaTable: SectorTable) => {
     // If occupied and already has a waiter, go directly to order view
     const existingWaiter = tableWaiter[areaTable.id]
     const existingAccounts = accountsByTable[areaTable.id] || []
 
-    if (areaTable.status === "occupied" && existingWaiter && existingAccounts.length > 0) {
+    if (areaTable.status === "occupied" && existingAccounts.length > 0) {
       // Open directly — skip waiter assignment
-      const preferred = existingAccounts.find((a) => a.status !== "pagado" && a.items.length > 0)
-        || existingAccounts.find((a) => a.status !== "pagado")
-        || existingAccounts[0]
+      const preferred = pickPreferredAccount(existingAccounts)
       setSelectedTable({ id: areaTable.id, number: areaTable.number, label: areaTable.label, seats: areaTable.seats })
       setMode("order")
       loadAccountIntoState(preferred)
       return
+    }
+
+    // Si la mesa sale ocupada pero la cuenta aun no esta hidratada localmente,
+    // traerla del backend para continuar la misma orden.
+    if (areaTable.status === "occupied" && existingAccounts.length === 0) {
+      try {
+        const apiOrdenes = await ordenes.getAll("pos")
+        const active = apiOrdenes
+          .filter((o) => o.mesaId === areaTable.id)
+          .filter((o) => !(["pagada","pagado","cancelada","cancelado"] as string[]).includes(o.estado))
+          .sort((a, b) => new Date(a.creadoEn).getTime() - new Date(b.creadoEn).getTime())
+
+        if (active.length > 0) {
+          const restored = active.map((o, idx) => buildAccountFromOrden(o, idx + 1))
+          const preferred = pickPreferredAccount(restored)
+          setAccountsByTable((prev) => ({ ...prev, [areaTable.id]: restored }))
+          const waiterId = active.find((o) => o.meseroId)?.meseroId || existingWaiter
+          if (waiterId) setTableWaiter((prev) => ({ ...prev, [areaTable.id]: waiterId }))
+          setSelectedTable({ id: areaTable.id, number: areaTable.number, label: areaTable.label, seats: areaTable.seats })
+          setMode("order")
+          loadAccountIntoState(preferred)
+          return
+        }
+      } catch {
+        toast({ title: "No se pudo cargar la cuenta", description: "Intenta actualizar las mesas.", variant: "destructive" })
+        return
+      }
     }
 
     // Otherwise show waiter assignment
@@ -1093,9 +1143,7 @@ export default function POSPage() {
       nextAccounts = [createAccount(tableId, seats, 1)]
       setAccountsByTable((prev) => ({ ...prev, [tableId]: nextAccounts }))
     }
-    const preferred = nextAccounts.find((a) => a.status !== "pagado" && a.items.length > 0)
-      || nextAccounts.find((a) => a.status !== "pagado")
-      || nextAccounts[0]
+    const preferred = pickPreferredAccount(nextAccounts)
 
     setSelectedTable({ id: pendingAreaTable.id, number: pendingAreaTable.number, label: pendingAreaTable.label, seats: pendingAreaTable.seats })
     setTableWaiter((prev) => ({ ...prev, [tableId]: selectedWaiterId }))
