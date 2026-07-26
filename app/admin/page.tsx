@@ -69,6 +69,7 @@ import {
 import { toast } from "@/hooks/use-toast"
 import { DashboardLive } from "./dashboard-live"
 import { InventoryOverview } from "./inventory-overview"
+import { RecipeManager } from "./recipe-manager"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1053,13 +1054,14 @@ export default function AdminPage() {
 
       <div className="max-w-[1400px] mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-11 mb-6">
+          <TabsList className="grid w-full grid-cols-12 mb-6">
             <TabsTrigger value="dashboard"><LayoutDashboard className="w-4 h-4 mr-1 hidden sm:inline" />Dashboard</TabsTrigger>
             <TabsTrigger value="sucursales"><Building2 className="w-4 h-4 mr-1 hidden sm:inline" />Sucursales</TabsTrigger>
             <TabsTrigger value="inventory"><Package className="w-4 h-4 mr-1 hidden sm:inline" />Inventario</TabsTrigger>
             <TabsTrigger value="users"><Users className="w-4 h-4 mr-1 hidden sm:inline" />Usuarios</TabsTrigger>
             <TabsTrigger value="tables"><LayoutGrid className="w-4 h-4 mr-1 hidden sm:inline" />Mesas</TabsTrigger>
             <TabsTrigger value="menu"><UtensilsCrossed className="w-4 h-4 mr-1 hidden sm:inline" />Menú</TabsTrigger>
+            <TabsTrigger value="recipes"><BookOpen className="w-4 h-4 mr-1 hidden sm:inline" />Recetas</TabsTrigger>
             <TabsTrigger value="payments"><CreditCard className="w-4 h-4 mr-1 hidden sm:inline" />Pagos</TabsTrigger>
             <TabsTrigger value="taxes"><Percent className="w-4 h-4 mr-1 hidden sm:inline" />Impuestos</TabsTrigger>
             <TabsTrigger value="business"><Settings className="w-4 h-4 mr-1 hidden sm:inline" />Negocio</TabsTrigger>
@@ -1075,6 +1077,11 @@ export default function AdminPage() {
           {/* ══ INVENTARIO (consolidado) ══ */}
           <TabsContent value="inventory" className="space-y-4">
             <InventoryOverview onChanged={() => insumos.getAll("admin").then(setModifierInsumos).catch(() => {})} />
+          </TabsContent>
+
+          {/* ══ RECETAS ══ */}
+          <TabsContent value="recipes" className="space-y-4">
+            <RecipeManager module="admin" />
           </TabsContent>
 
           {/* ══ USUARIOS ══ */}
