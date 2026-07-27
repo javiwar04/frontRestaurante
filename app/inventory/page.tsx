@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
-  getSession, clearSession, clearActiveEstablecimiento, type AuthUser,
-  insumos, recetas, platillos as platillosApi, movimientos,
-  type Insumo, type ModificadorGrupo,
+  getSession, clearSession, getActiveEstablecimiento, setActiveEstablecimiento, clearActiveEstablecimiento, type AuthUser,
+  insumos, recetas, platillos as platillosApi, movimientos, establecimientos as establecimientosApi,
+  type Insumo, type ModificadorGrupo, type Establecimiento,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -234,6 +234,8 @@ const blankMenuItem = (): Omit<MenuItemDef, "id"> => ({ name: "", category: "Pla
 export default function InventoryPage() {
   const router = useRouter()
   const [user, setUser] = useState<AuthUser | null>(null)
+  const [branches, setBranches] = useState<Establecimiento[]>([])
+  const [activeBranchId, setActiveBranchId] = useState("")
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [menuItems, setMenuItems] = useState<MenuItemDef[]>([])
   const [recipes, setRecipes] = useState<Recipe[]>([])
@@ -258,7 +260,21 @@ export default function InventoryPage() {
     const session = getSession("inventory")
     if (!session) { router.push("/inventory/login"); return }
     setUser(session.user)
+    setActiveBranchId(getActiveEstablecimiento("inventory") || "")
   }, [router])
+
+  useEffect(() => {
+    if (!user) return
+    establecimientosApi.getAll("inventory")
+      .then(list => {
+        setBranches(list)
+        if (!getActiveEstablecimiento("inventory") && list[0]?.id) {
+          setActiveEstablecimiento("inventory", list[0].id)
+          setActiveBranchId(list[0].id)
+        }
+      })
+      .catch(() => {})
+  }, [user])
 
   useEffect(() => {
     if (!user) return
@@ -301,7 +317,14 @@ export default function InventoryPage() {
     ).catch(e => toast({ title: "Error al cargar recetas", description: String(e), variant: "destructive" }))
 
     refreshMovements()
-  }, [user])
+  }, [user, activeBranchId])
+
+  const changeBranch = (branchId: string) => {
+    setActiveEstablecimiento("inventory", branchId)
+    setActiveBranchId(branchId)
+    setSearch("")
+    toast({ title: "Sucursal cambiada" })
+  }
 
   const logout = () => {
     clearSession("inventory")
@@ -618,6 +641,18 @@ export default function InventoryPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {branches.length > 0 && (
+                <Select value={activeBranchId} onValueChange={changeBranch}>
+                  <SelectTrigger className="h-9 w-[170px] bg-background">
+                    <SelectValue placeholder="Sucursal" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branches.map(branch => (
+                      <SelectItem key={branch.id} value={branch.id}>{branch.nombre}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               {lowStockIngredients.length > 0 && (
                 <Badge variant="destructive" className="gap-1">
                   <AlertTriangle className="w-3 h-3" />
@@ -645,6 +680,85 @@ export default function InventoryPage() {
 
           {/* ══ DASHBOARD ══ */}
           <TabsContent value="dashboard" className="space-y-6">
+            <Card className="border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Resumen de inventario</CardTitle>
+                <CardDescription>Operación y movimientos del día en esta sucursal</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-md border p-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <ShoppingCart className="w-3.5 h-3.5" />
+                      Insumos activos
+                    </div>
+                    <div className="text-xl font-bold">{ingredients.filter(i => i.active).length}</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <TrendingUp className="w-3.5 h-3.5" />
+                      Valor inventario
+                    </div>
+                    <div className="text-xl font-bold text-primary">Q{totalInventoryValue.toFixed(2)}</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <UtensilsCrossed className="w-3.5 h-3.5" />
+                      Platillos activos
+                    </div>
+                    <div className="text-xl font-bold">{menuItems.filter(m => m.active).length}</div>
+                  </div>
+                  <div className={`rounded-md border p-3 ${lowStockIngredients.length > 0 ? "border-destructive/40 bg-destructive/5" : ""}`}>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      Alertas
+                    </div>
+                    <div className={`text-xl font-bold ${lowStockIngredients.length > 0 ? "text-destructive" : ""}`}>{lowStockIngredients.length}</div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-base font-semibold">Resumen del día</h3>
+                    <p className="text-sm text-muted-foreground">Movimientos de inventario registrados hoy en esta sucursal</p>
+                  </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">Entradas</div>
+                    <div className="text-lg font-bold text-green-600">{todayInventorySummary.entradas.toFixed(2)}</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">Rebajado por ventas</div>
+                    <div className="text-lg font-bold text-primary">{todayInventorySummary.salidasVenta.toFixed(2)}</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">Mermas</div>
+                    <div className="text-lg font-bold text-yellow-600">{todayInventorySummary.mermas.toFixed(2)}</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">Ajustes</div>
+                    <div className="text-lg font-bold text-blue-600">{todayInventorySummary.ajustes.toFixed(2)}</div>
+                  </div>
+                </div>
+                {todayInventorySummary.ventasTop.length > 0 ? (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Insumos más rebajados por ventas</Label>
+                    {todayInventorySummary.ventasTop.map(({ ingredientId, qty, ing }) => (
+                      <div key={ingredientId} className="flex justify-between text-sm rounded-md border px-3 py-2">
+                        <span>{ing?.name || "Insumo eliminado"}</span>
+                        <span className="font-medium">{qty.toFixed(2)} {ing?.unit || ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Todavía no hay rebajas por venta registradas hoy.</p>
+                )}
+                </div>
+              </CardContent>
+            </Card>
+
             <Card className="border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Disponibilidad de platillos</CardTitle>
@@ -701,84 +815,6 @@ export default function InventoryPage() {
                     )
                   })}
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Resumen operativo</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="rounded-md border p-3">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <ShoppingCart className="w-3.5 h-3.5" />
-                      Insumos activos
-                    </div>
-                    <div className="text-xl font-bold">{ingredients.filter(i => i.active).length}</div>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <TrendingUp className="w-3.5 h-3.5" />
-                      Valor inventario
-                    </div>
-                    <div className="text-xl font-bold text-primary">Q{totalInventoryValue.toFixed(2)}</div>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <UtensilsCrossed className="w-3.5 h-3.5" />
-                      Platillos activos
-                    </div>
-                    <div className="text-xl font-bold">{menuItems.filter(m => m.active).length}</div>
-                  </div>
-                  <div className={`rounded-md border p-3 ${lowStockIngredients.length > 0 ? "border-destructive/40 bg-destructive/5" : ""}`}>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      Alertas
-                    </div>
-                    <div className={`text-xl font-bold ${lowStockIngredients.length > 0 ? "text-destructive" : ""}`}>{lowStockIngredients.length}</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Resumen del día</CardTitle>
-                <CardDescription>Movimientos de inventario registrados hoy en esta sucursal</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Entradas</div>
-                    <div className="text-lg font-bold text-green-600">{todayInventorySummary.entradas.toFixed(2)}</div>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Rebajado por ventas</div>
-                    <div className="text-lg font-bold text-primary">{todayInventorySummary.salidasVenta.toFixed(2)}</div>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Mermas</div>
-                    <div className="text-lg font-bold text-yellow-600">{todayInventorySummary.mermas.toFixed(2)}</div>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Ajustes</div>
-                    <div className="text-lg font-bold text-blue-600">{todayInventorySummary.ajustes.toFixed(2)}</div>
-                  </div>
-                </div>
-                {todayInventorySummary.ventasTop.length > 0 ? (
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Insumos más rebajados por ventas</Label>
-                    {todayInventorySummary.ventasTop.map(({ ingredientId, qty, ing }) => (
-                      <div key={ingredientId} className="flex justify-between text-sm rounded-md border px-3 py-2">
-                        <span>{ing?.name || "Insumo eliminado"}</span>
-                        <span className="font-medium">{qty.toFixed(2)} {ing?.unit || ""}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Todavía no hay rebajas por venta registradas hoy.</p>
-                )}
               </CardContent>
             </Card>
 
